@@ -2,6 +2,7 @@
 #include "util.hpp"
 #include "child.hpp"
 #include "dh.hpp"
+#include "rsa_client.hpp"
 #include <fstream>
 #include <limits>
 #include <sys/types.h>
@@ -14,6 +15,7 @@
 #include <iostream>
 #include <string>
 #include <cstring>
+#include <cstdio>
 #include <vector>
 #include <algorithm>
 #include <errno.h>
@@ -162,6 +164,79 @@ namespace {
 
 	void read_config_file (const std::string& path);
 
+	void load_key_and_cert ()
+	{
+		if (access(key_filename.c_str(), R_OK) == -1) {
+			throw Configuration_error("Unable to read TLS key file: " + std::string(std::strerror(errno)));
+		}
+
+		std::FILE*	fp = std::fopen(cert_filename.c_str(), "r");
+		if (!fp) {
+			throw Configuration_error("Unable to read TLS cert file: " + std::string(std::strerror(errno)));
+		}
+
+		// Read the first certificate from the file, which is our certificate:
+		X509*		crt = PEM_read_X509_AUX(fp, NULL, NULL, NULL);
+		if (!crt) {
+			unsigned long code = ERR_get_error();
+			std::fclose(fp);
+			throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(code));
+		}
+
+		// Get the RSA public key from it:
+		EVP_PKEY*	pubkey = X509_get_pubkey(crt);
+		if (!pubkey) {
+			X509_free(crt);
+			std::fclose(fp);
+			throw Configuration_error("Unable to load TLS cert: malformed X509 file?");
+		}
+
+		RSA*		public_rsa = EVP_PKEY_get1_RSA(pubkey);
+		if (!public_rsa) {
+			// not an RSA key
+			X509_free(crt);
+			std::fclose(fp);
+			throw Configuration_error("Unable to load TLS cert: does not correspond to an RSA key");
+		}
+
+		// Create a RSA private key "client"
+		EVP_PKEY*	privkey = rsa_client_load_private_key(0, public_rsa);
+		RSA_free(public_rsa);
+
+		// Use this private key for SSL:
+		if (SSL_CTX_use_PrivateKey(ssl_ctx, privkey) != 1) {
+			unsigned long code = ERR_get_error();
+			EVP_PKEY_free(privkey);
+			X509_free(crt);
+			std::fclose(fp);
+			throw Configuration_error("Unable to load TLS key: " + Openssl_error::message(code));
+		}
+
+		// Use this certificate for SSL:
+		if (SSL_CTX_use_certificate(ssl_ctx, crt) != 1) {
+			unsigned long code = ERR_get_error();
+			X509_free(crt);
+			std::fclose(fp);
+			throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(code));
+		}
+
+		// Now read the intermediate CA (chain) certificates:
+		while (X509* ca = PEM_read_X509(fp, NULL, NULL, NULL)) {
+			if (SSL_CTX_add_extra_chain_cert(ssl_ctx, ca) != 1) {
+				unsigned long code = ERR_get_error();
+				X509_free(ca);
+				std::fclose(fp);
+				throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(code));
+			}
+		}
+		unsigned long code = ERR_get_error();
+		std::fclose(fp);
+		if (!(ERR_GET_LIB(code) == ERR_LIB_PEM && ERR_GET_REASON(code) == PEM_R_NO_START_LINE)) {
+			// Not simply a harmless end-of-file error
+			throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(code));
+		}
+	}
+
 	void process_config_param (const std::string& key, const std::string& value)
 	{
 		if (key == "config") {
@@ -169,13 +244,9 @@ namespace {
 		} else if (key == "port") {
 			listening_port = std::atoi(value.c_str());
 		} else if (key == "key") {
-			if (SSL_CTX_use_PrivateKey_file(ssl_ctx, value.c_str(), SSL_FILETYPE_PEM) != 1) {
-				throw Configuration_error("Unable to load TLS key: " + Openssl_error::message(ERR_get_error()));
-			}
+			key_filename = value;
 		} else if (key == "cert") {
-			if (SSL_CTX_use_certificate_chain_file(ssl_ctx, value.c_str()) != 1) {
-				throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(ERR_get_error()));
-			}
+			cert_filename = value;
 		} else if (key == "ciphers") {
 			if (SSL_CTX_set_cipher_list(ssl_ctx, value.c_str()) != 1) {
 				throw Configuration_error("No TLS ciphers available");
@@ -285,6 +356,8 @@ try {
 			return 2;
 		}
 	}
+
+	load_key_and_cert();
 
 	// Listen
 	listening_sock = socket(AF_INET6, SOCK_STREAM, 0);

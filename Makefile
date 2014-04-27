@@ -4,7 +4,7 @@ LDFLAGS += -lcrypto -lssl
 PREFIX = /usr/local
 
 PROGRAMS = titus
-OBJFILES = child.o common.o util.o dh.o titus.o
+OBJFILES = child.o common.o util.o dh.o rsa_client.o rsa_server.o titus.o
 
 all: $(PROGRAMS)
 

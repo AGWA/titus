@@ -1,7 +1,11 @@
 #include "util.hpp"
 #include <fcntl.h>
 #include <errno.h>
+#include <unistd.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/prctl.h>
+#include <grp.h>
 #include <netinet/ip.h>
 
 void set_nonblocking (int fd, bool nonblocking)
@@ -37,3 +41,61 @@ void set_not_v6only (int sock_fd)
 	}
 }
 
+
+void drop_privileges (const char* chroot_directory, uid_t drop_uid, gid_t drop_gid)
+{
+	// Change root.
+	if (chroot_directory) {
+		if (chroot(chroot_directory) == -1) {
+			throw System_error("chroot", chroot_directory, errno);
+		}
+		if (chdir("/") == -1) {
+			throw System_error("chdir", "/", errno);
+		}
+	}
+
+	// Drop privileges.
+	if (drop_gid != static_cast<gid_t>(-1) && setgid(drop_gid) == -1) {
+		throw System_error("setgid", "", errno);
+	}
+	if (drop_gid != static_cast<gid_t>(-1) && setgroups(0, &drop_gid) == -1) { // Note: man page is unclear if 2nd argument can be NULL or not; play it safe by passing it a valid address; it should never be deferenced b/c first argument is 0
+		throw System_error("setgroups", "", errno);
+	}
+	if (drop_uid != static_cast<uid_t>(-1) && setuid(drop_uid) == -1) {
+		throw System_error("setuid", "", errno);
+	}
+
+	// Prevent this process from being ptraced, so other children running as this UID can't
+	// attack us.  Ultimately we should use a dedicated UID for every child process for even
+	// better isolation.
+	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
+		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
+	}
+}
+
+
+void	write_all (int fd, const void* data, size_t len)
+{
+	const char*	p = reinterpret_cast<const char*>(data);
+	ssize_t		bytes_written;
+	while (len > 0 && (bytes_written = write(fd, p, len)) > 0) {
+		p += bytes_written;
+		len -= bytes_written;
+	}
+	if (len > 0) {
+		throw System_error("write", "", errno);
+	}
+}
+bool	read_all (int fd, void* data, size_t len)
+{
+	char*		p = reinterpret_cast<char*>(data);
+	ssize_t		bytes_read;
+	while (len > 0 && (bytes_read = read(fd, p, len)) > 0) {
+		p += bytes_read;
+		len -= bytes_read;
+	}
+	if (len > 0 && bytes_read != 0) {
+		throw System_error("read", "", errno);
+	}
+	return len == 0;
+}
