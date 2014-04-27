@@ -1,4 +1,5 @@
 #include "common.hpp"
+#include "util.hpp"
 #include "child.hpp"
 #include "dh.hpp"
 #include <fstream>

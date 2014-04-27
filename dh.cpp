@@ -1,5 +1,5 @@
 #include "dh.hpp"
-#include "common.hpp"
+#include "util.hpp"
 #include <openssl/err.h>
 
 /* Diffie-Hellman Group 14, as per RFC3526 */
