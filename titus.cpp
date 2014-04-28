@@ -17,6 +17,7 @@
 #include <string>
 #include <cstring>
 #include <cstdio>
+#include <ctime>
 #include <vector>
 #include <algorithm>
 #include <errno.h>
@@ -41,6 +42,8 @@ namespace {
 	unsigned int		num_children = 0;		// Current # of children, spare or not
 	std::vector<pid_t>	spare_children;			// PIDs of children just waiting to accept
 	sig_atomic_t		pending_sigchld = 0;		// Set by signal handler so SIGCHLD can be handled in event loop
+	time_t			last_failed_child_time = 0;
+	unsigned int		failed_children = 0;
 
 	inline unsigned int	num_spare_children () { return spare_children.size(); }
 
@@ -87,6 +90,8 @@ namespace {
 		// at a convenient time
 		sigprocmask(SIG_BLOCK, &siginfo.sa_mask, NULL);
 	}
+
+	struct Too_many_failed_children { };
 
 	void spawn_children ()
 	{
@@ -137,18 +142,28 @@ namespace {
 
 	void on_child_terminated (pid_t pid, int status)
 	{
+		bool	failed = false;
 		if (WIFSIGNALED(status)) {
 			std::clog << "Child " << pid << " terminated by signal " << WTERMSIG(status) << std::endl;
+			failed = true;
 		} else if (!WIFEXITED(status)) {
 			std::clog << "Child " << pid << " terminated uncleanly" << std::endl;
+			failed = true;
 		} else if (WEXITSTATUS(status) != 0) {
 			std::clog << "Child " << pid << " exited with status " << WEXITSTATUS(status) << std::endl;
+			failed = true;
 		}
-		// TODO: don't keep spawning children if _spare_ children are constantly failing
 
 		std::vector<pid_t>::iterator	it(std::find(spare_children.begin(), spare_children.end(), pid));
 		if (it != spare_children.end()) {
 			spare_children.erase(it);
+			if (failed) {
+				++failed_children;
+				last_failed_child_time = std::time(NULL);
+				if (failed_children == min_spare_children * 3) {
+					throw Too_many_failed_children();
+				}
+			}
 		}
 
 		--num_children;
@@ -474,8 +489,12 @@ try {
 	FD_SET(children_pipe[0], &readfds);
 
 	is_running = 1;
+	struct timespec		timeout = { 2, 0 };
 	int			select_res = 0;
-	while (is_running && ((select_res = pselect(children_pipe[0] + 1, &readfds, NULL, NULL, NULL, &empty_sigset)) >= 0 || errno == EINTR)) {
+	while (is_running && ((select_res = pselect(children_pipe[0] + 1, &readfds, NULL, NULL, failed_children ? &timeout : NULL, &empty_sigset)) >= 0 || errno == EINTR)) {
+		if (failed_children && std::time(NULL) >= last_failed_child_time + 2) {
+			failed_children = 0;
+		}
 		if (pending_sigchld) {
 			on_sigchld();
 			pending_sigchld = 0;
@@ -509,4 +528,9 @@ try {
 	std::clog << "Configuration error: " << error.message << std::endl;
 	cleanup();
 	return 5;
+} catch (const Too_many_failed_children& error) {
+	// TODO: better error reporting when this happens
+	std::clog << "Too many child processes failed." << std::endl;
+	cleanup();
+	return 7;
 }
