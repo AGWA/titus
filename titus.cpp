@@ -271,7 +271,7 @@ namespace {
 		} else if (key == "port") {
 			listening_port = std::atoi(value.c_str());
 		} else if (key == "transparent") {
-			transparent = parse_config_bool(value);
+			transparent = parse_config_transparency(value);
 		} else if (key == "backend") {
 			backend_address_string = value;
 		} else if (key == "backend-port") {
@@ -420,7 +420,7 @@ try {
 
 	load_key_and_cert();
 
-	if (transparent) {
+	if (transparent == TRANSPARENT_ON) {
 		if (!backend_address_string.empty() || !backend_address_port.empty()) {
 			throw Configuration_error("backend and backend-address cannot be specified in transparent mode");
 		}
@@ -437,7 +437,7 @@ try {
 		throw System_error("socket", "", errno);
 	}
 	set_not_v6only(listening_sock);
-	if (transparent) {
+	if (transparent == TRANSPARENT_ON) {
 		set_transparent(listening_sock);
 	}
 

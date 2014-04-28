@@ -1,6 +1,7 @@
 #ifndef COMMON_HPP
 #define COMMON_HHP
 
+#include "util.hpp"
 #include <string>
 #include <sys/types.h>
 #include <openssl/ssl.h>
@@ -10,7 +11,7 @@
 // Config:
 extern std::string		cert_filename;
 extern std::string		key_filename;
-extern bool			transparent;
+extern Transparency		transparent;
 extern struct sockaddr_in6	backend_address;
 extern unsigned int		max_handshake_time;	// TLS handshake must complete within this # of seconds
 extern std::string		chroot_directory;	// empty to not chroot

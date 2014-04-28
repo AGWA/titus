@@ -362,7 +362,7 @@ try {
 	}
 
 	set_not_v6only(backend_sock);
-	if (transparent) {
+	if (transparent != TRANSPARENT_OFF) {
 		set_transparent(backend_sock);
 	}
 
@@ -416,12 +416,14 @@ try {
 	}
 	alarm(0);
 
-	if (transparent) {
+	if (transparent != TRANSPARENT_OFF) {
 		// Impersonate the client when talking to the backend.
 		if (bind(backend_sock, reinterpret_cast<const struct sockaddr*>(&client_address), client_address_len) == -1) {
 			throw System_error("bind", "", errno);
 		}
+	}
 
+	if (transparent == TRANSPARENT_ON) {
 		// The backend address is the local address of the client socket.  Since this is a transparent
 		// proxy socket, the local address is not actually the local address, but the original address before proxying.
 		struct sockaddr_in6	backend_address;

@@ -3,7 +3,7 @@
 // Config (see common.hpp):
 std::string		cert_filename;
 std::string		key_filename;
-bool			transparent = false;
+Transparency		transparent = TRANSPARENT_OFF;
 struct sockaddr_in6	backend_address;
 unsigned int		max_handshake_time = 10;
 std::string		chroot_directory;

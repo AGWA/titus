@@ -74,5 +74,21 @@ inline bool parse_config_bool (const char* str)
 }
 inline bool parse_config_bool (const std::string& str) { return parse_config_bool(str.c_str()); }
 
+enum Transparency {
+	TRANSPARENT_OFF = 0,
+	TRANSPARENT_ON = 1,
+	TRANSPARENT_BACKEND_ONLY = 2
+};
+
+inline Transparency parse_config_transparency (const char* str)
+{
+	if (strcasecmp(str, "backend-only") == 0) {
+		return TRANSPARENT_BACKEND_ONLY;
+	} else {
+		return parse_config_bool(str) ? TRANSPARENT_ON : TRANSPARENT_OFF;
+	}
+}
+inline Transparency parse_config_transparency (const std::string& str) { return parse_config_transparency(str.c_str()); }
+
 
 #endif
