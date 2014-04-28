@@ -24,7 +24,7 @@ namespace {
 
 	int	rsa_client_private_decrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
 	{
-		uint8_t		command = 0;
+		uint8_t		command = 1;
 		uintptr_t	key_id = reinterpret_cast<uintptr_t>(RSA_get_app_data(rsa));
 
 		send_to_server(&command, sizeof(command));
@@ -44,7 +44,7 @@ namespace {
 
 	int	rsa_client_private_encrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
 	{
-		uint8_t		command = 1;
+		uint8_t		command = 2;
 		uintptr_t	key_id = reinterpret_cast<uintptr_t>(RSA_get_app_data(rsa));
 
 		send_to_server(&command, sizeof(command));
@@ -120,5 +120,13 @@ EVP_PKEY*	rsa_client_load_private_key (uintptr_t key_id, RSA* public_rsa)
 void	rsa_client_set_socket (int arg_sock)
 {
 	sock = arg_sock;
+}
+
+void	rsa_client_ping ()
+{
+	uint8_t		command = 0;
+	send_to_server(&command, sizeof(command));
+	uint8_t		pong;
+	recv_from_server(&pong, sizeof(pong));
 }
 

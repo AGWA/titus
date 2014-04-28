@@ -26,9 +26,27 @@ namespace {
 		signal(SIGTERM, SIG_DFL);
 		signal(SIGCHLD, SIG_DFL);
 		signal(SIGPIPE, SIG_IGN);
+
 		sigset_t empty_sigset;
 		sigemptyset(&empty_sigset);
 		sigprocmask(SIG_SETMASK, &empty_sigset, NULL);
+	}
+
+	void sigchld_handler (int)
+	{
+		// This will happen if the RSA server process (which is a child of the child proecss)
+		// terminates prematurely.  Usually, the RSA server process terminates only when it
+		// detects that its parent (the "child" process) has terminated.
+		_exit(8);
+	}
+
+	void install_sigchld_handler ()
+	{
+		struct sigaction		siginfo;
+		sigemptyset(&siginfo.sa_mask);
+		siginfo.sa_flags = 0;
+		siginfo.sa_handler = sigchld_handler;
+		sigaction(SIGCHLD, &siginfo, NULL);
 	}
 
 	class Pump {
@@ -329,8 +347,12 @@ try {
 	close(rsa_server_sockpair[1]);
 	rsa_client_set_socket(rsa_server_sockpair[0]);
 
-	// TODO: ping the RSA server to make sure it successfully started.
-	// TODO: if the RSA server terminates, terminate this process too (catch SIGCHLD?).
+	// Ping the RSA server to make sure it successfully started.  It might fail
+	// to start if the RSA key file was bad.
+	rsa_client_ping();
+
+	// if the RSA server terminates, terminate this process too:
+	install_sigchld_handler();
 
 	// Create the backend socket.  Since setting transparency requires privilege,
 	// we do it while we're still root.
