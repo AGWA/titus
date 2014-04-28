@@ -108,7 +108,7 @@ void daemonize ()
 	if (pid == -1) {
 		throw System_error("fork", "", errno);
 	}
-	if (pid == 0) {
+	if (pid != 0) {
 		// Exit parent
 		_exit(0);
 	}
