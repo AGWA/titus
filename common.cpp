@@ -4,10 +4,9 @@
 std::string		cert_filename;
 std::string		key_filename;
 bool			transparent = false;
-unsigned int		min_spare_children = 3;
-unsigned int		max_children = 100;
+struct sockaddr_in6	backend_address;
 unsigned int		max_handshake_time = 10;
-const char*		chroot_directory = NULL;
+std::string		chroot_directory;
 uid_t			drop_uid_network = -1;
 gid_t			drop_gid_network = -1;
 uid_t			drop_uid_keyserver = -1;

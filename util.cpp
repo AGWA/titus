@@ -5,6 +5,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/prctl.h>
+#include <netdb.h>
+#include <pwd.h>
 #include <grp.h>
 #include <netinet/ip.h>
 
@@ -42,11 +44,11 @@ void set_not_v6only (int sock_fd)
 }
 
 
-void drop_privileges (const char* chroot_directory, uid_t drop_uid, gid_t drop_gid)
+void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t drop_gid)
 {
 	// Change root.
-	if (chroot_directory) {
-		if (chroot(chroot_directory) == -1) {
+	if (!chroot_directory.empty()) {
+		if (chroot(chroot_directory.c_str()) == -1) {
 			throw System_error("chroot", chroot_directory, errno);
 		}
 		if (chdir("/") == -1) {
@@ -99,3 +101,66 @@ bool	read_all (int fd, void* data, size_t len)
 	}
 	return len == 0;
 }
+
+void daemonize ()
+{
+	pid_t		pid = fork();
+	if (pid == -1) {
+		throw System_error("fork", "", errno);
+	}
+	if (pid == 0) {
+		// Exit parent
+		_exit(0);
+	}
+	setsid();
+
+	close(0);
+	close(1);
+	close(2);
+	open("/dev/null", O_RDONLY);
+	open("/dev/null", O_WRONLY);
+	open("/dev/null", O_WRONLY);
+}
+
+void resolve_address (struct sockaddr_in6* address, const std::string& host, const std::string& port)
+{
+	struct addrinfo		hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET6;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_V4MAPPED;
+	hints.ai_protocol = 0;
+
+	struct addrinfo*	addrs;
+	int			res = getaddrinfo(host.empty() ? NULL : host.c_str(), port.c_str(), &hints, &addrs);
+	if (res != 0) {
+		throw Configuration_error("Unable to resolve [" + host + "]:" + port + " - " + gai_strerror(res));
+	}
+	if (addrs->ai_next) {
+		freeaddrinfo(addrs);
+		throw Configuration_error("[" + host + "]:" + port + " resolves to more than one address");
+	}
+	std::memcpy(address, addrs->ai_addr, addrs->ai_addrlen);
+	freeaddrinfo(addrs);
+}
+
+uid_t resolve_user (const std::string& user)
+{
+	errno = 0;
+	struct passwd*		usr = getpwnam(user.c_str());
+	if (!usr) {
+		throw Configuration_error(user + ": " + (errno ? std::strerror(errno) : "No such user"));
+	}
+	return usr->pw_uid;
+}
+
+gid_t resolve_group (const std::string& group)
+{
+	errno = 0;
+	struct group*		grp = getgrnam(group.c_str());
+	if (!grp) {
+		throw Configuration_error(group + ": " + (errno ? std::strerror(errno) : "No such group"));
+	}
+	return grp->gr_gid;
+}
+

@@ -328,6 +328,9 @@ try {
 	close(rsa_server_sockpair[1]);
 	rsa_client_set_socket(rsa_server_sockpair[0]);
 
+	// TODO: ping the RSA server to make sure it successfully started.
+	// TODO: if the RSA server terminates, terminate this process too (catch SIGCHLD?).
+
 	// Create the backend socket.  Since setting transparency requires privilege,
 	// we do it while we're still root.
 	int			backend_sock = socket(AF_INET6, SOCK_STREAM, 0);
@@ -362,6 +365,7 @@ try {
 	close(children_pipe[1]);
 
 	// SSL Handshake
+	// TODO: enforce max_handshake_time
 	SSL*			ssl = SSL_new(ssl_ctx);
 	if (!SSL_set_fd(ssl, client_sock)) {
 		throw Openssl_error(ERR_get_error());
@@ -405,15 +409,17 @@ try {
 			throw System_error("connect", "", errno);
 		}
 	} else {
-		// TODO: non-transparent operation
-
-		struct sockaddr_in6	backend_address;
-		socklen_t		backend_address_len = sizeof(backend_address);
-		if (getsockname(client_sock, reinterpret_cast<struct sockaddr*>(&backend_address), &backend_address_len) == -1) { // TEMP
-			throw System_error("getsockname", "", errno);
+		if (std::memcmp(&backend_address.sin6_addr, &in6addr_any, sizeof(struct in6_addr)) == 0) {
+			// Backend IP address not specified, so use the local address of the client socket
+			struct sockaddr_in6	local_address;
+			socklen_t		local_address_len = sizeof(local_address);
+			if (getsockname(client_sock, reinterpret_cast<struct sockaddr*>(&local_address), &local_address_len) == -1) {
+				throw System_error("getsockname", "", errno);
+			}
+			std::memcpy(&backend_address.sin6_addr, &local_address.sin6_addr, sizeof(struct in6_addr));
 		}
-		backend_address.sin6_port = htons(8701); // TEMP
 
+		socklen_t		backend_address_len = sizeof(backend_address);
 		if (connect(backend_sock, reinterpret_cast<const struct sockaddr*>(&backend_address), backend_address_len) == -1) {
 			throw System_error("connect", "", errno);
 		}

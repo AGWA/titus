@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <netinet/ip.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <unistd.h>
 #include <iostream>
 #include <string>
@@ -26,10 +27,17 @@
 
 namespace {
 	// Config specific to parent:
+	bool			run_as_daemon = false;
+	std::string		pid_file;
 	uint16_t		listening_port = 0;		// stored in host byte order
+	unsigned int		min_spare_children = 3;		// Minimum number of children ready and waiting to accept()
+	unsigned int		max_children = 100;		// Absolute maximum number of children, spare or not
+	std::string		backend_address_string;
+	std::string		backend_address_port;
 
 	// State specific to parent:
 	sig_atomic_t		is_running = 1;
+	bool			pid_file_created = false;
 	unsigned int		num_children = 0;		// Current # of children, spare or not
 	std::vector<pid_t>	spare_children;			// PIDs of children just waiting to accept
 	sig_atomic_t		pending_sigchld = 0;		// Set by signal handler so SIGCHLD can be handled in event loop
@@ -136,7 +144,7 @@ namespace {
 		} else if (WEXITSTATUS(status) != 0) {
 			std::clog << "Child " << pid << " exited with status " << WEXITSTATUS(status) << std::endl;
 		}
-		// TODO: don't keep spawning children if the're all failing
+		// TODO: don't keep spawning children if _spare_ children are constantly failing
 
 		std::vector<pid_t>::iterator	it(std::find(spare_children.begin(), spare_children.end(), pid));
 		if (it != spare_children.end()) {
@@ -241,8 +249,34 @@ namespace {
 	{
 		if (key == "config") {
 			read_config_file(value);
+		} else if (key == "daemon") {
+			run_as_daemon = parse_config_bool(value);
+		} else if (key == "pid-file") {
+			pid_file = value;
 		} else if (key == "port") {
 			listening_port = std::atoi(value.c_str());
+		} else if (key == "transparent") {
+			transparent = parse_config_bool(value);
+		} else if (key == "backend") {
+			backend_address_string = value;
+		} else if (key == "backend-port") {
+			backend_address_port = value;
+		} else if (key == "min-spare-children") {
+			min_spare_children = std::atoi(value.c_str());
+		} else if (key == "max-children") {
+			max_children = std::atoi(value.c_str());
+		} else if (key == "max-handshake-time") {
+			max_handshake_time = std::atoi(value.c_str());
+		} else if (key == "network-user") {
+			drop_uid_network = resolve_user(value);
+		} else if (key == "network-group") {
+			drop_gid_network = resolve_group(value);
+		} else if (key == "keyserver-user") {
+			drop_uid_keyserver = resolve_user(value);
+		} else if (key == "keyserver-group") {
+			drop_gid_keyserver = resolve_group(value);
+		} else if (key == "chroot") {
+			chroot_directory = value;
 		} else if (key == "key") {
 			key_filename = value;
 		} else if (key == "cert") {
@@ -329,6 +363,13 @@ namespace {
 			process_config_param(directive, value);
 		}
 	}
+
+	void remove_pid_file ()
+	{
+		if (pid_file_created) {
+			unlink(pid_file.c_str());
+		}
+	}
 }
 
 int main (int argc, char** argv)
@@ -359,6 +400,17 @@ try {
 
 	load_key_and_cert();
 
+	if (transparent) {
+		if (!backend_address_string.empty() || !backend_address_port.empty()) {
+			throw Configuration_error("backend and backend-address cannot be specified in transparent mode");
+		}
+	} else {
+		if (backend_address_port.empty()) {
+			throw Configuration_error("No backend-port specified");
+		}
+		resolve_address(&backend_address, backend_address_string, backend_address_port);
+	}
+
 	// Listen
 	listening_sock = socket(AF_INET6, SOCK_STREAM, 0);
 	if (listening_sock == -1) {
@@ -383,6 +435,25 @@ try {
 		throw System_error("listen", "", errno);
 	}
 
+	// Write PID file, daemonize, etc.
+	std::ofstream		pid_file_out;
+	if (!pid_file.empty()) {
+		// Open PID file before forking so we can report errors
+		pid_file_out.open(pid_file.c_str(), std::ofstream::out | std::ofstream::trunc);
+		if (!pid_file_out) {
+			throw Configuration_error("Unable to open PID file " + pid_file + " for writing.");
+		}
+		pid_file_created = true;
+	}
+	if (run_as_daemon) {
+		daemonize();
+	}
+	if (pid_file_out) {
+		pid_file_out << getpid() << '\n';
+		pid_file_out.close();
+	}
+
+	// Spawn spare children to accept() and service connections
 	if (pipe(children_pipe) == -1) {
 		throw System_error("pipe", "", errno);
 	}
@@ -414,8 +485,12 @@ try {
 		throw System_error("pselect", "", errno);
 	}
 
-	// TODO: kill off children
+	// only kill spare children; let other children continue to service their active connection
+	for (size_t i = 0; i < spare_children.size(); ++i) {
+		kill(spare_children[i], SIGTERM);
+	}
 
+	remove_pid_file();
 	return 0;
 } catch (const System_error& error) {
 	std::clog << "System error: " << error.syscall;
@@ -423,11 +498,14 @@ try {
 		std::clog << ": " << error.target;
 	}
 	std::clog << ": " << std::strerror(errno) << std::endl;
+	remove_pid_file();
 	return 3;
 } catch (const Openssl_error& error) {
 	std::clog << "OpenSSL error: " << error.message() << std::endl;
+	remove_pid_file();
 	return 4;
 } catch (const Configuration_error& error) {
 	std::clog << "Configuration error: " << error.message << std::endl;
+	remove_pid_file();
 	return 5;
 }

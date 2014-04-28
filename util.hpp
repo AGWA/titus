@@ -4,6 +4,9 @@
 #include <string>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/ip.h>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -43,10 +46,16 @@ void set_nonblocking (int fd, bool nonblocking);
 void set_transparent (int sock_fd);
 void set_not_v6only (int sock_fd);
 
-void drop_privileges (const char* chroot_directory, uid_t drop_uid, gid_t drop_gid);
+void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t drop_gid);
 
 void write_all (int fd, const void* data, size_t len);
 bool read_all (int fd, void* data, size_t len);
+
+void resolve_address (struct sockaddr_in6* address, const std::string& host, const std::string& port);
+uid_t resolve_user (const std::string&);
+gid_t resolve_group (const std::string&);
+
+void daemonize ();
 
 inline bool parse_config_bool (const char* str)
 {
