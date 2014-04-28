@@ -22,6 +22,7 @@ namespace {
 	void init_signals ()
 	{
 		signal(SIGINT, SIG_DFL);
+		signal(SIGALRM, SIG_DFL);
 		signal(SIGTERM, SIG_DFL);
 		signal(SIGCHLD, SIG_DFL);
 		signal(SIGPIPE, SIG_IGN);
@@ -365,11 +366,12 @@ try {
 	close(children_pipe[1]);
 
 	// SSL Handshake
-	// TODO: enforce max_handshake_time
 	SSL*			ssl = SSL_new(ssl_ctx);
 	if (!SSL_set_fd(ssl, client_sock)) {
 		throw Openssl_error(ERR_get_error());
 	}
+	alarm(max_handshake_time);	// This is a very basic anti-DoS measure. Once the handshake is
+					// complete, we rely on the backend to handle timeouts.
 	int			accept_res;
 	if ((accept_res = SSL_accept(ssl)) != 1) {
 		int		err = SSL_get_error(ssl, accept_res);
@@ -390,6 +392,7 @@ try {
 			return 5;
 		}
 	}
+	alarm(0);
 
 	if (transparent) {
 		// Impersonate the client when talking to the backend.
