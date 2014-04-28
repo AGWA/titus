@@ -364,8 +364,13 @@ namespace {
 		}
 	}
 
-	void remove_pid_file ()
+	void cleanup ()
 	{
+		// only kill spare children; let other children continue to service their active connection
+		for (size_t i = 0; i < spare_children.size(); ++i) {
+			kill(spare_children[i], SIGTERM);
+		}
+
 		if (pid_file_created) {
 			unlink(pid_file.c_str());
 		}
@@ -485,12 +490,8 @@ try {
 		throw System_error("pselect", "", errno);
 	}
 
-	// only kill spare children; let other children continue to service their active connection
-	for (size_t i = 0; i < spare_children.size(); ++i) {
-		kill(spare_children[i], SIGTERM);
-	}
 
-	remove_pid_file();
+	cleanup();
 	return 0;
 } catch (const System_error& error) {
 	std::clog << "System error: " << error.syscall;
@@ -498,14 +499,14 @@ try {
 		std::clog << ": " << error.target;
 	}
 	std::clog << ": " << std::strerror(errno) << std::endl;
-	remove_pid_file();
+	cleanup();
 	return 3;
 } catch (const Openssl_error& error) {
 	std::clog << "OpenSSL error: " << error.message() << std::endl;
-	remove_pid_file();
+	cleanup();
 	return 4;
 } catch (const Configuration_error& error) {
 	std::clog << "Configuration error: " << error.message << std::endl;
-	remove_pid_file();
+	cleanup();
 	return 5;
 }
