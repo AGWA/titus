@@ -25,6 +25,8 @@
 #include <fcntl.h>
 #include <openssl/err.h>
 
+static volatile sig_atomic_t	is_running = 1;
+static volatile sig_atomic_t	pending_sigchld = 0;		// Set by signal handler so SIGCHLD can be handled in event loop
 
 namespace {
 	// Config specific to parent:
@@ -37,11 +39,9 @@ namespace {
 	std::string		backend_address_port;
 
 	// State specific to parent:
-	sig_atomic_t		is_running = 1;
 	bool			pid_file_created = false;
 	unsigned int		num_children = 0;		// Current # of children, spare or not
 	std::vector<pid_t>	spare_children;			// PIDs of children just waiting to accept
-	sig_atomic_t		pending_sigchld = 0;		// Set by signal handler so SIGCHLD can be handled in event loop
 	time_t			last_failed_child_time = 0;
 	unsigned int		failed_children = 0;
 
