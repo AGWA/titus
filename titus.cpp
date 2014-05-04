@@ -108,7 +108,7 @@ namespace {
 				}
 			}
 
-			++num_children;
+			++num_children; // upper bounded by max_children
 			spare_children.push_back(pid);
 		}
 	}
@@ -166,7 +166,7 @@ namespace {
 			}
 		}
 
-		--num_children;
+		--num_children; // won't underflow b/c every --num_children can be paired with a ++num_children
 
 		spawn_children();
 	}
