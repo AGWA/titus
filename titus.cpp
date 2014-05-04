@@ -409,9 +409,10 @@ try {
 
 	// Command line arguments come in pairs of the form "--name value" and correspond
 	// directly to the name/value option pairs in the config file (a la OpenVPN).
-	for (int i = 1; i < argc; i += 2) {
+	for (int i = 1; i < argc; ) {
 		if (std::strncmp(argv[i], "--", 2) == 0 && i + 1 < argc) {
 			process_config_param(argv[i] + 2, argv[i+1]);
+			i += 2;
 		} else {
 			std::clog << argv[0] << ": Bad arguments" << std::endl;
 			return 2;
