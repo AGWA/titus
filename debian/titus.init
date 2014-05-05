@@ -1,0 +1,171 @@
+#!/bin/sh
+#
+### BEGIN INIT INFO
+# Provides:		titus
+# Required-Start:	$remote_fs $named $network $time
+# Required-Stop:	$remote_fs $named $network $time
+# Default-Start:	2 3 4 5
+# Default-Stop:		0 1 6
+# Short-Description:	Totally Isolated TLS Unwrapping Server
+### END INIT INFO
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=/usr/sbin/titus
+DESC="Totally Isolated TLS Unwrapping Server"
+CONFDIR=/etc/titus
+RUNDIR=/var/run/titus
+USER=titus
+GROUP=nogroup
+KEYSERVER_USER=titus-keys
+KEYSERVER_GROUP=nogroup
+AUTOSTART=all
+CHROOT=/var/run/titus/root
+
+test -x $DAEMON || exit 0
+
+# Include defaults if available
+if [ -f /etc/default/titus ]
+then
+	. /etc/default/titus
+fi
+
+start() {
+	# Return
+	#   0 if daemon has been started
+	#   1 if daemon was already running
+	#   2 if daemon could not be started
+
+	CONFIG=$CONFDIR/$1.conf
+	PIDFILE=$RUNDIR/$1.pid
+
+	# Create the run directory if it doesn't exist
+	[ -d $RUNDIR ] || install -m 755 -d $RUNDIR || return 2
+	chown root:root $RUNDIR || return 2
+
+	# Create the chroot directory if it doesn't exist
+	[ -d $CHROOT ] || install -m 755 -d $CHROOT || return 2
+	chown root:root $CHROOT || return 2
+
+	DAEMON_OPTS="--network-user $USER --network-group $GROUP --keyserver-user $KEYSERVER_USER --keyserver-group $KEYSERVER_GROUP --chroot $CHROOT --config $CONFIG --daemon yes --pid-file $PIDFILE"
+
+ 	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --startas $DAEMON --test > /dev/null || return 1
+	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --startas $DAEMON -- $DAEMON_OPTS || return 2
+}
+
+stop() {
+	# Return
+	#   0 if daemon has been stopped
+	#   1 if daemon was already stopped
+	#   2 if daemon could not be stopped
+	#   other if a failure occurred
+
+	PIDFILE=$RUNDIR/$1.pid
+
+	start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE --exec $DAEMON
+	RETVAL=$?
+	if [ $RETVAL -ne 2 ]
+	then
+		# In case PID file isn't properly deleted:
+		rm -f $PIDFILE
+	fi
+	return $RETVAL
+}
+
+command=$1
+shift
+
+STATUS=0
+
+case "$command" in
+  start)
+	echo -n "Starting $DESC: "
+	if [ $# -eq 0 ]
+	then
+		if [ "$AUTOSTART" = "all" ]
+		then
+			# Start all servers with config in $CONFDIR
+			once=0
+			for conf in $CONFDIR/*.conf
+			do
+				if [ -f $conf ]
+				then
+					name=`basename "$conf" .conf`
+					echo -n "$name "
+					start "$name"
+					once=1
+				fi
+			done
+			if [ $once -eq 0 ]
+			then
+				echo "No configuration files found in $CONFDIR"
+			fi
+		elif [ "$AUTOSTART" = "none" ] || [ -z "$AUTOSTART" ]
+		then
+			echo "Autostart disabled"
+		else
+			# Start the servers specified in the $AUTOSTART variable
+			for name in $AUTOSTART
+			do
+				if [ ! -f $CONFDIR/$name.conf ]
+				then
+					echo "Configuration file for $name not found: $CONFDIR/$name.conf"
+					continue
+				fi
+				echo -n "$name "
+				start "$name"
+			done
+		fi
+	else
+		# Start the servers specified on the command line
+		for name
+		do
+			if [ ! -f $CONFDIR/$name.conf ]
+			then
+				echo "Configuration file for $name not found: $CONFDIR/$name.conf"
+				STATUS=1
+				continue
+			fi
+			echo -n "$name "
+			start "$name"
+		done
+	fi
+	echo "."
+	;;
+  stop)
+	echo -n "Stopping $DESC: "
+	if [ $# -eq 0 ]
+	then
+		# Stop all running servers
+		for pidfile in $RUNDIR/*.pid
+		do
+			if [ -f $pidfile ]
+			then
+				name=`basename "$pidfile" .pid`
+				stop "$name"
+				echo -n "$name "
+			fi
+		done
+	else
+		# Stop the servers specified on the command line
+		for name
+		do
+			if [ -f $RUNDIR/$name.pid ]
+			then
+				stop "$name"
+				echo -n "$name "
+			fi
+		done
+	fi
+	echo "."
+	;;
+  restart|force-reload)
+	$0 stop "$@"
+	$0 start "$@" || exit $?
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart|force-reload}" >&2
+	exit 1
+	;;
+esac
+
+exit $STATUS

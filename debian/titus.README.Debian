@@ -1,0 +1,13 @@
+Place titus config files, with filenames ending in .conf, in /etc/titus.
+For an example configuration file, see /usr/share/doc/titus/examples, or
+consult the titus(8) man page.
+
+A particular instance of titus can be started/stopped/restarted with:
+
+	/etc/init.d/titus start|stop|restart name
+
+where name is the name of the configuration file _without_ .conf.
+
+By default, all configurations in /etc/titus are launched on system
+boot, but this behavior can be changed by editing /etc/default/titus.
+

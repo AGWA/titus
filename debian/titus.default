@@ -1,0 +1,11 @@
+#
+# AUTOSTART=
+#  Start these servers automatically via init script.  Allowed values are
+#  "all", "none" or space separated list of server names.  Defaults to "all."
+#
+#  The server name refers to the configutation file name in /etc/titus,
+#  _without_ the .conf (i.e. "vhost1" would be /etc/titus/vhost1.conf).
+#
+AUTOSTART="all"
+#AUTOSTART="none"
+#AUTOSTART="vhost1 vhost2"

@@ -1,0 +1,24 @@
+Source: titus
+Maintainer: Andrew Ayer <agwa@andrewayer.name>
+Section: net
+Priority: extra
+Standards-Version: 3.9.4
+Build-Depends: debhelper (>= 9), make (>= 3.81-5), libc6-dev (>= 2.7-18), gcc (>= 4:4.3.2-2), coreutils (>= 6.10-6), libssl-dev (>= 1.0.1-4)
+
+Package: titus
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser
+Description: totally isolated TLS unwrapping daemon
+ titus is a highly secure network proxy that terminates TLS (SSL)
+ connections and forwards the unencrypted traffic to some backend.
+ It is similar in purpose to stud and stunnel.
+ .
+ titus provides heightened security by running in extreme isolation.
+ The private key is stored in a dedicated process that doesn't talk to
+ the network, and all private key operations take place in this process.
+ Furthermore, every connection is handled by a new process that runs
+ as an unprivileged user in an unwritable and empty root directory.
+ These security features ensure that if there is a vulnerability in the
+ TLS processing code, it is very, very unlikely that an attacker could
+ steal your private key, access the memory of your application, sniff
+ data from other TLS connections, or otherwise attack your system.
