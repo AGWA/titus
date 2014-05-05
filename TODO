@@ -1,0 +1,44 @@
+Features:
+	Near-term:
+		[DONE] Non-transparent operation
+		SNI support
+		Reasonable default options for: dhgroup, ecdhcurve, and ciphers
+		More DH groups
+		[DONE] Stop spawning children if spare children are constantly failing
+		[DONE] Better robustness with RSA server:
+			[DONE] ping it from child to make sure it started OK
+			[DONE] if it terminates, terminate the child too with an error
+		[DONE] Enforce max handshake time
+
+	Medium-term:
+		Flexible configuration of backend address: route different SNIs/local addresses to different backends
+			List of local addresses (:: for all) mapped to list of:
+				SNI name
+				Key + cert
+				Backend address (:: for same as local address in transparent mode)
+		Support listening on specific addresses
+		Logging (syslog probably)
+		Better reporting of errors that happen in children, esp configuration errors
+		Support custom DH params
+		Better handle SSL shutdown edge cases
+	
+	Long-term:
+		dynamic UIDs
+			with cgroups so we can kill them off
+		seccomp filter
+
+Meta:
+	Document transparent mode
+	Test on non-Linux
+	[DONE] Legalese
+	[DONE] README
+	[DONE] Debian packaging
+	[DONE] Man page
+	[DONE] Web page
+	[DONE] Mailing lists
+
+Internal improvements:
+	Switch to C++11
+	Use RAII more extensively to avoid leaks (though leaks currently only happen if there's an error, and we terminate on error anyways)
+	Use structs/classes instead of global variables
+	Use enum for key server commands

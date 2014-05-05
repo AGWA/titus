@@ -1,0 +1,29 @@
+DEPENDENCIES
+
+  * OpenSSL 1.0.1 or higher, with development headers
+  * A C++ compiler (such as gcc)
+  * Make
+
+
+BUILDING
+
+Run `make`.
+
+
+INSTALLING
+
+Run `make install`.
+
+To install somewhere besides /usr/local, run `make install PREFIX=/path/to/prefix`
+
+
+DEBIAN PACKAGING
+
+Debian packaging, complete with an init script, can be found in the
+'debian' branch of the project Git repository.  The package is built
+using git-buildpackage as follows:
+
+  1. Check out the debian branch: `git checkout debian`
+  2. Build the package: `git-buildpackage -uc -us`
+
+

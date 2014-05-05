@@ -1,0 +1,104 @@
+TITUS -- Totally Isolated TLS Unwrapping Server
+===============================================
+
+titus is a highly secure network proxy that terminates TLS (SSL)
+connections and forwards the unencrypted traffic to some backend.
+It is similar in purpose to stud and stunnel.
+
+titus provides heightened security by running in extreme isolation.
+The private key is stored in a dedicated process that doesn't talk to
+the network, and all private key operations take place in this process.
+Furthermore, every connection is handled by a new process that runs
+as an unprivileged user in an unwritable and empty root directory.
+These security features ensure that if there is a vulnerability in the
+TLS processing code, it is very, very unlikely that an attacker could
+steal your private key, access the memory of your application, sniff
+data from other TLS connections, or otherwise attack your system.
+
+titus aims to be as transparent as possible to the backend application.
+Changes to the connection state between the client and titus are reflected
+in the connection between titus and the backend, and vice-versa.  This
+allows the backend to dictate throttling behavior, maximum connection
+behavior, and so on.
+
+On Linux, titus can operate in transparent proxy mode so that the client
+IP address is preserved when contacting the backend.  This requires
+special configuration with iptables and advanced routing (see TRANSPARENT
+PROXY MODE in the titus(8) man page).
+
+titus supports the Elliptic Curve Diffie-Hellman handshake, and also
+provides advanced control over TLS settings, such as the Diffie-Hellman
+modulus, and the curve used for Elliptic Curve Diffie-Hellman.  This is
+handy if your backend's built-in TLS support is lacking.
+
+
+CURRENT STATUS
+
+The current version of titus is 0.1, released on 2014-05-04.  titus aims
+to be bug-free and secure, though it has not yet undergone serious
+testing or performance optimization.  Additionally, we may make
+backwards-incompatible changes to the behavior before titus reaches
+version 1.0
+
+
+INSTALLING TITUS
+
+To build from source, see the BUILDING file.
+
+Alternatively, install the Debian package, which should work on Debian
+Wheezy and Ubuntu 12.04-14.04:
+
+ * amd64: https://www.agwa.name/projects/titus/downloads/titus_0.1-1_amd64.deb
+ * i386:  https://www.agwa.name/projects/titus/downloads/titus_0.1-1_i386.deb
+
+Using the Debian package is highly recommended since it comes with a
+handy init script.
+
+An APT repo is in the works.
+
+
+CONFIGURING TITUS
+
+Start with titus.conf.example and modify it to fit your needs.  Also see
+the titus(8) man page.
+
+If you're using the Debian package, start with the example config
+in /usr/share/doc/titus/examples and place it in /etc/titus.
+See /etc/titus/README for details.
+
+
+RUNNING TITUS
+
+Run `titus --config /path/to/titus.conf`.
+
+If you're using the Debian package, use the init script to start/stop
+titus like any other service.
+
+
+PROJECT RESOURCES
+
+Home page:	https://agwa.name/projects/titus
+Git repository:	https://agwa.name/git/titus.git
+		https://github.com/AGWA/titus.git (mirror)
+GitHub project:	https://github.com/AGWA/titus
+Issue tracker:	https://github.com/AGWA/titus/issues
+Announce list:	https://lists.cloudmutt.com/mailman/listinfo/titus-announce
+Discuss list:	https://lists.cloudmutt.com/mailman/listinfo/titus-discuss
+
+For help or questions, send mail to the discuss list
+<titus-discuss@lists.cloudmutt.com>.  To report a bug or make a
+feature request, please open an issue at GitHub or send mail to the
+discuss list.  To contribute code, please send a properly-formatted
+patch to the discuss list, or open a pull request at GitHub.
+
+
+AUTHOR
+
+titus was written by Andrew Ayer <agwa@andrewayer.name>.
+
+
+FURTHER DOCUMENTATION
+
+ * For copyright/license, see COPYING.
+ * For build instructions, see BUILDING.
+ * For general documentation, see the titus(8) man page.
