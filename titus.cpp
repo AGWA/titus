@@ -545,7 +545,7 @@ try {
 	if (!error.target.empty()) {
 		std::clog << ": " << error.target;
 	}
-	std::clog << ": " << std::strerror(errno) << std::endl;
+	std::clog << ": " << std::strerror(error.number) << std::endl;
 	cleanup();
 	return 3;
 } catch (const Openssl_error& error) {

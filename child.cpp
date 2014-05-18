@@ -323,7 +323,7 @@ namespace {
 		if (!error.target.empty()) {
 			std::clog << ": " << error.target;
 		}
-		std::clog << ": " << std::strerror(errno) << std::endl;
+		std::clog << ": " << std::strerror(error.number) << std::endl;
 		return 3;
 	} catch (const Openssl_error& error) {
 		std::clog << "OpenSSL error in RSA server: " << error.message() << std::endl;
@@ -494,7 +494,7 @@ try {
 	if (!error.target.empty()) {
 		std::clog << ": " << error.target;
 	}
-	std::clog << ": " << std::strerror(errno) << std::endl;
+	std::clog << ": " << std::strerror(error.number) << std::endl;
 	return 3;
 } catch (const Openssl_error& error) {
 	std::clog << "OpenSSL error in child: " << error.message() << std::endl;
