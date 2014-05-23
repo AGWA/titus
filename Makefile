@@ -10,7 +10,7 @@ OBJFILES = child.o common.o util.o dh.o rsa_client.o rsa_server.o titus.o
 all: $(PROGRAMS)
 
 titus: $(OBJFILES)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) $(LIBMILTER_LDFLAGS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
 	rm -f *.o $(PROGRAMS)
