@@ -43,7 +43,7 @@ version 1.0
 
 INSTALLING TITUS
 
-If you use Debian or Ubuntu, see https://www.cloudmutt.com/titus/#getting
+If you use Debian or Ubuntu, see https://www.opsmate.com/titus/#getting
 for information about installing the titus .deb package.  Using the .deb
 package is highly recommended since it comes with a handy init script.
 
@@ -70,7 +70,7 @@ titus like any other service.
 
 PROJECT RESOURCES
 
-Home page:	https://www.cloudmutt.com/titus
+Home page:	https://www.opsmate.com/titus
 Git repository:	https://agwa.name/git/titus.git
 		https://github.com/AGWA/titus.git (mirror)
 GitHub project:	https://github.com/AGWA/titus
