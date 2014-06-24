@@ -83,6 +83,13 @@ void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t
 		}
 	}
 
+	// Prevent this process from being ptraced, so other children running as this UID can't
+	// attack us.  Ultimately we should use a dedicated UID for every child process for even
+	// better isolation.
+	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
+		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
+	}
+
 	// Drop privileges.
 	if (drop_gid != static_cast<gid_t>(-1) && setgid(drop_gid) == -1) {
 		throw System_error("setgid", "", errno);
@@ -92,13 +99,6 @@ void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t
 	}
 	if (drop_uid != static_cast<uid_t>(-1) && setuid(drop_uid) == -1) {
 		throw System_error("setuid", "", errno);
-	}
-
-	// Prevent this process from being ptraced, so other children running as this UID can't
-	// attack us.  Ultimately we should use a dedicated UID for every child process for even
-	// better isolation.
-	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
-		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
 	}
 }
 
