@@ -446,7 +446,18 @@ try {
 	if (transparent != TRANSPARENT_OFF) {
 		// Impersonate the client when talking to the backend.
 		if (bind(backend_sock, reinterpret_cast<const struct sockaddr*>(&client_address), client_address_len) == -1) {
-			throw System_error("bind", "", errno);
+			if (errno != EADDRINUSE) {
+				throw System_error("bind", "", errno);
+			}
+
+			// If we get EADDRINUSE it means the client is local so there is no way
+			// to impersonate the port number.  Zero out the port number so one is
+			// assigned dynamically.  (Unfortunately the backend won't see the true source port
+			// number, but backends generally only care about source IP address.)
+			client_address.sin6_port = 0;
+			if (bind(backend_sock, reinterpret_cast<const struct sockaddr*>(&client_address), client_address_len) == -1) {
+				throw System_error("bind", "", errno);
+			}
 		}
 	}
 
