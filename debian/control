@@ -3,7 +3,7 @@ Maintainer: Andrew Ayer <agwa@andrewayer.name>
 Section: net
 Priority: extra
 Standards-Version: 3.9.4
-Build-Depends: debhelper (>= 9), make (>= 3.81-5), libc6-dev (>= 2.7-18), gcc (>= 4:4.3.2-2), coreutils (>= 6.10-6), libssl-dev (>= 1.0.1-4)
+Build-Depends: debhelper (>= 9), libssl-dev (>= 1.0.1-4)
 
 Package: titus
 Architecture: any
