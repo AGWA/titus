@@ -25,13 +25,21 @@
  * authorization.
  */
 
+// TODO: do this via a configure script:
+#ifdef __linux__
+#define HAS_PRCTL 1
+#define HAS_IP_TRANSPARENT 1
+#endif
+
 #include "util.hpp"
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#ifdef HAS_PRCTL
 #include <sys/prctl.h>
+#endif
 #include <netdb.h>
 #include <pwd.h>
 #include <grp.h>
@@ -56,10 +64,14 @@ void set_nonblocking (int fd, bool nonblocking)
 
 void set_transparent (int sock_fd)
 {
+#ifdef HAS_IP_TRANSPARENT
 	int transparent = 1;
 	if (setsockopt(sock_fd, IPPROTO_IP, IP_TRANSPARENT, &transparent, sizeof(transparent)) == -1) {
 		throw System_error("setsockopt(IP_TRANSPARENT)", "", errno);
 	}
+#else
+	throw System_error("setsockopt(IP_TRANSPARENT)", "", ENOSYS);
+#endif
 }
 
 void set_not_v6only (int sock_fd)
@@ -83,12 +95,14 @@ void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t
 		}
 	}
 
+#ifdef HAS_PRCTL
 	// Prevent this process from being ptraced, so other children running as this UID can't
 	// attack us.  Ultimately we should use a dedicated UID for every child process for even
 	// better isolation.
 	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
 		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
 	}
+#endif
 
 	// Drop privileges.
 	if (drop_gid != static_cast<gid_t>(-1) && setgid(drop_gid) == -1) {
