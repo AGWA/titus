@@ -37,7 +37,6 @@
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/prctl.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
 #include <netinet/ip.h>
