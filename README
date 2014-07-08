@@ -41,6 +41,15 @@ backwards-incompatible changes to the behavior before titus reaches
 version 1.0
 
 
+NON-LINUX WARNING
+
+On non-Linux systems, due to the lack of the prctl() syscall, titus
+cannot prevent ptracing of one titus process by another titus process.
+This substantially reduces the isolation between TLS connections.
+A future version of titus will provide full isolation even on non-Linux
+systems.
+
+
 INSTALLING TITUS
 
 If you use Debian or Ubuntu, see https://www.opsmate.com/titus/#getting
