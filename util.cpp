@@ -130,6 +130,15 @@ void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t
 #endif
 }
 
+void	restrict_file_descriptors ()
+{
+	// Prevent this process from creating new file descriptors by setting RLIMIT_NOFILE to 0
+	struct rlimit		rlim = { 0, 0 };
+	if (setrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		throw System_error("setrlimit(RLIMIT_NOFILE)", "", errno);
+	}
+}
+
 
 void	write_all (int fd, const void* data, size_t len)
 {

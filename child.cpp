@@ -325,6 +325,7 @@ namespace {
 
 		// Drop privileges
 		drop_privileges(chroot_directory, drop_uid_keyserver, drop_gid_keyserver);
+		restrict_file_descriptors();
 
 		// Read and respond to RSA operations
 		run_rsa_server(rsa, sock);
@@ -424,6 +425,9 @@ try {
 		write(children_pipe[1], &our_pid, sizeof(our_pid));
 	}
 	close(children_pipe[1]);
+
+	// Prevent the creation of new file descriptors.
+	restrict_file_descriptors();
 
 	// SSL Handshake
 	SSL*			ssl = SSL_new(ssl_ctx);

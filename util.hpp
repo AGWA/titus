@@ -74,6 +74,7 @@ void set_transparent (int sock_fd);
 void set_not_v6only (int sock_fd);
 
 void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t drop_gid);
+void restrict_file_descriptors ();
 
 void write_all (int fd, const void* data, size_t len);
 bool read_all (int fd, void* data, size_t len);
