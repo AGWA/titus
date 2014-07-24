@@ -37,7 +37,7 @@
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/poll.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/ip.h>
 #include <grp.h>
@@ -232,9 +232,10 @@ namespace {
 
 		void operator() ()
 		{
-			struct pollfd	fds[2];
-			fds[0].fd = client_sock;
-			fds[1].fd = backend_sock;
+			fd_set		rfds;
+			fd_set		wfds;
+			FD_ZERO(&rfds);
+			FD_ZERO(&wfds);
 
 			while (true) {
 				Result	client_read_result = pump_client_reads();
@@ -249,32 +250,43 @@ namespace {
 						backend_write_result != pump_successful) {
 
 					// No forward progress was made at all -> poll() until we can make progress
-					fds[0].events = 0;
-					fds[1].events = 0;
+					int		max_fd = -1;
 					if (client_read_result == pump_read_blocked ||
 							client_write_result == pump_read_blocked) {
-						fds[0].events |= POLLIN;
+						FD_SET(client_sock, &rfds);
+						max_fd = std::max(max_fd, client_sock);
+					} else {
+						FD_CLR(client_sock, &rfds);
 					}
 					if (backend_read_result == pump_read_blocked ||
 							backend_write_result == pump_read_blocked) {
-						fds[1].events |= POLLIN;
+						FD_SET(backend_sock, &rfds);
+						max_fd = std::max(max_fd, backend_sock);
+					} else {
+						FD_CLR(backend_sock, &rfds);
 					}
 					if (client_read_result == pump_write_blocked ||
 							client_write_result == pump_write_blocked) {
-						fds[0].events |= POLLOUT;
+						FD_SET(client_sock, &wfds);
+						max_fd = std::max(max_fd, client_sock);
+					} else {
+						FD_CLR(client_sock, &wfds);
 					}
 					if (backend_read_result == pump_write_blocked ||
 							backend_write_result == pump_write_blocked) {
-						fds[1].events |= POLLOUT;
+						FD_SET(backend_sock, &wfds);
+						max_fd = std::max(max_fd, backend_sock);
+					} else {
+						FD_CLR(backend_sock, &wfds);
 					}
 
-					if (fds[0].events == 0 && fds[1].events == 0) {
+					if (max_fd == -1) {
 						// This'll happen when the connection winds down cleanly
 						break;
 					}
 
-					if (poll(fds, 2, -1) == -1) {
-						throw System_error("poll", "", errno);
+					if (select(max_fd + 1, &rfds, &wfds, NULL, NULL) == -1) {
+						throw System_error("select", "", errno);
 					}
 				}
 			}
