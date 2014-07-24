@@ -37,6 +37,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/resource.h>
 #ifdef HAS_PRCTL
 #include <sys/prctl.h>
 #endif
@@ -44,6 +45,11 @@
 #include <pwd.h>
 #include <grp.h>
 #include <netinet/ip.h>
+
+// TODO: do this via a configure script:
+#if defined(__linux__) || defined(RLIMIT_NPROC)
+#define HAS_RLIMIT_NPROC
+#endif
 
 void set_nonblocking (int fd, bool nonblocking)
 {
@@ -114,6 +120,14 @@ void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t
 	if (drop_uid != static_cast<uid_t>(-1) && setuid(drop_uid) == -1) {
 		throw System_error("setuid", "", errno);
 	}
+
+#ifdef HAS_RLIMIT_NPROC
+	// Prevent this process from forking by setting RLIMIT_NPROC to 0
+	struct rlimit		rlim = { 0, 0 };
+	if (setrlimit(RLIMIT_NPROC, &rlim) == -1) {
+		throw System_error("setrlimit(RLIMIT_NPROC)", "", errno);
+	}
+#endif
 }
 
 
