@@ -72,7 +72,6 @@ namespace {
 	openssl_unique_ptr<EC_KEY> ecdhcurve;
 
 	// State specific to parent:
-	bool			using_sni = false;
 	bool			pid_file_created = false;
 	unsigned int		num_children = 0;		// Current # of children, spare or not
 	std::vector<pid_t>	spare_children;			// PIDs of children just waiting to accept
@@ -221,16 +220,15 @@ namespace {
 	int ssl_servername_cb (SSL* ssl, int*, void*)
 	{
 		const char*	servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-		if (servername) {
-			for (Vhost& vhost : vhosts) {
-				if (vhost.servername.empty() || vhost.servername == servername) {
-					SSL_set_SSL_CTX(ssl, vhost.ssl_ctx.get());
-					active_vhost = &vhost;
-					break;
-				}
+		for (Vhost& vhost : vhosts) {
+			if (vhost.matches_servername(servername)) {
+				SSL_set_SSL_CTX(ssl, vhost.ssl_ctx.get());
+				active_vhost = &vhost;
+				return SSL_TLSEXT_ERR_OK;
 			}
 		}
-		return SSL_TLSEXT_ERR_OK;
+		std::clog << "No matching vhost for SNI name '" << (servername ? servername : "") << "'" << std::endl;
+		return SSL_TLSEXT_ERR_ALERT_FATAL;
 	}
 
 	void init_ssl_ctx (Vhost& vhost)
@@ -246,9 +244,7 @@ namespace {
 		if (SSL_CTX_set_cipher_list(vhost.ssl_ctx.get(), ciphers.c_str()) != 1) {
 			throw Configuration_error("No TLS ciphers available from " + ciphers);
 		}
-		if (using_sni) {
-			SSL_CTX_set_tlsext_servername_callback(vhost.ssl_ctx.get(), ssl_servername_cb);
-		}
+		SSL_CTX_set_tlsext_servername_callback(vhost.ssl_ctx.get(), ssl_servername_cb);
 		if (dhgroup) {
 			if (SSL_CTX_set_tmp_dh(vhost.ssl_ctx.get(), dhgroup.get()) != 1) {
 				throw Configuration_error("Unable to set DH parameters: " + Openssl_error::message(ERR_get_error()));
@@ -351,8 +347,9 @@ namespace {
 		} else if (key == "local-port") {
 			vhost.local_address_port = value;
 		} else if (key == "sni-name") {
-			using_sni = true;
 			vhost.servername = value;
+		} else if (key == "sni-fallback") {
+			vhost.match_null_servername = parse_config_bool(value);
 		} else {
 			throw Configuration_error("Unknown vhost parameter `" + key + "'");
 		}
