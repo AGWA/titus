@@ -31,6 +31,8 @@
 #include "util.hpp"
 #include <string>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <openssl/ssl.h>
 #include <openssl/rsa.h>
 #include <netinet/ip.h>
@@ -50,6 +52,8 @@ extern gid_t			drop_gid_keyserver;	// GID for key server process (-1 to not chan
 // State:
 extern int			listening_sock;
 extern int			children_pipe[2];		// Used by children to tell us when they accept a connection
+extern struct sockaddr_un	keyserver_sockaddr;
+extern socklen_t		keyserver_sockaddr_len;
 
 // OpenSSL state:
 extern SSL_CTX*			ssl_ctx;

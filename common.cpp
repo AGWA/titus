@@ -42,6 +42,8 @@ gid_t			drop_gid_keyserver = -1;
 // Common state (see common.hpp):
 int			listening_sock = -1;
 int			children_pipe[2];
+struct sockaddr_un	keyserver_sockaddr;
+socklen_t		keyserver_sockaddr_len;
 
 // OpenSSL state:
 SSL_CTX*		ssl_ctx = NULL;

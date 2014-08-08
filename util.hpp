@@ -32,12 +32,15 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <string.h>
+#include <unistd.h>
+#include <stdlib.h>
 
 struct System_error {
 	std::string	syscall;
@@ -72,6 +75,7 @@ struct Key_protocol_error {
 void set_nonblocking (int fd, bool nonblocking);
 void set_transparent (int sock_fd);
 void set_not_v6only (int sock_fd);
+void set_reuseaddr (int sock_fd);
 
 void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t drop_gid);
 void restrict_file_descriptors ();
@@ -118,5 +122,25 @@ inline Transparency parse_config_transparency (const char* str)
 }
 inline Transparency parse_config_transparency (const std::string& str) { return parse_config_transparency(str.c_str()); }
 
+int make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen_t* addr_len);
+int make_unix_socket (const std::string& path);
+
+std::string make_temp_directory ();
+
+template<class Arg> pid_t spawn (int (*main_function)(Arg), const Arg& arg)
+{
+	pid_t		pid = fork();
+	if (pid == -1) {
+		throw System_error("fork", "", errno);
+	}
+	if (pid == 0) {
+		try {
+			_exit(main_function(arg));
+		} catch (...) {
+			std::terminate();
+		}
+	}
+	return pid;
+}
 
 #endif

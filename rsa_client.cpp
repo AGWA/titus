@@ -149,11 +149,3 @@ void	rsa_client_set_socket (int arg_sock)
 	sock = arg_sock;
 }
 
-void	rsa_client_ping ()
-{
-	uint8_t		command = 0;
-	send_to_server(&command, sizeof(command));
-	uint8_t		pong;
-	recv_from_server(&pong, sizeof(pong));
-}
-

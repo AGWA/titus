@@ -88,6 +88,14 @@ void set_not_v6only (int sock_fd)
 	}
 }
 
+void set_reuseaddr (int sock_fd)
+{
+	int reuseaddr = 1;
+	if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof(reuseaddr)) == -1) {
+		throw System_error("setsockopt(SO_REUSEADDR)", "", errno);
+	}
+}
+
 
 void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t drop_gid)
 {
@@ -226,5 +234,42 @@ gid_t resolve_group (const std::string& group)
 		throw Configuration_error(group + ": " + (errno ? std::strerror(errno) : "No such group"));
 	}
 	return grp->gr_gid;
+}
+
+int make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen_t* addr_len)
+{
+	if (path.size() + 1 >= sizeof(addr->sun_path)) {
+		throw System_error("make_unix_socket", path, ENAMETOOLONG);
+	}
+	unlink(path.c_str());
+
+	addr->sun_family = AF_UNIX;
+	std::strcpy(addr->sun_path, path.c_str());
+	*addr_len = sizeof(addr->sun_family) + path.size();
+	int sock;
+	if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+		throw System_error("socket(AF_UNIX)", "", errno);
+	}
+	if (bind(sock, reinterpret_cast<struct sockaddr*>(addr), *addr_len) == -1) {
+		throw System_error("bind", addr->sun_path, errno);
+	}
+	return sock;
+}
+
+int make_unix_socket (const std::string& path)
+{
+	struct sockaddr_un addr;
+	socklen_t addr_len;
+	return make_unix_socket(path, &addr, &addr_len);
+}
+
+std::string make_temp_directory ()
+{
+	char		path[64];
+	std::strcpy(path, "/tmp/titus.XXXXXX");
+	if (!mkdtemp(path)) {
+		throw System_error("mkdtemp", path, errno);
+	}
+	return path;
 }
 

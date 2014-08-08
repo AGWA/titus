@@ -41,11 +41,6 @@ namespace {
 			throw Key_protocol_error("Client ended connection prematurely");
 		}
 	}
-	void	rsa_server_ping (RSA*, int sock)
-	{
-		uint8_t		pong = 0;
-		send_to_client(sock, &pong, sizeof(pong));
-	}
 	void	rsa_server_private_decrypt (RSA* rsa, int sock)
 	{
 		uintptr_t	key_id;
@@ -110,9 +105,7 @@ void	run_rsa_server (RSA* rsa, int sock)
 {
 	uint8_t	command;
 	while (read_all(sock, &command, sizeof(command))) {
-		if (command == 0) {
-			rsa_server_ping(rsa, sock);
-		} else if (command == 1) {
+		if (command == 1) {
 			rsa_server_private_decrypt(rsa, sock);
 		} else if (command == 2) {
 			rsa_server_private_encrypt(rsa, sock);

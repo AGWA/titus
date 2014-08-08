@@ -30,6 +30,7 @@
 #include "child.hpp"
 #include "dh.hpp"
 #include "rsa_client.hpp"
+#include "keyserver.hpp"
 #include <fstream>
 #include <limits>
 #include <sys/types.h>
@@ -71,6 +72,8 @@ namespace {
 	std::vector<pid_t>	spare_children;			// PIDs of children just waiting to accept
 	time_t			last_failed_child_time = 0;
 	unsigned int		failed_children = 0;
+	std::string		temp_directory;
+	pid_t			keyserver_pid = -1;
 
 	inline unsigned int	num_spare_children () { return spare_children.size(); }
 
@@ -119,21 +122,12 @@ namespace {
 	}
 
 	struct Too_many_failed_children { };
+	struct Keyserver_died { };
 
 	void spawn_children ()
 	{
 		while (num_spare_children() < min_spare_children && num_children < max_children) {
-			pid_t		pid = fork();
-			if (pid == -1) {
-				throw System_error("fork", "", errno);
-			}
-			if (pid == 0) {
-				try {
-					_exit(child_main());
-				} catch (...) {
-					std::terminate();
-				}
-			}
+			pid_t		pid = spawn(child_main, (void*)0);
 
 			++num_children; // upper bounded by max_children
 			spare_children.push_back(pid);
@@ -205,7 +199,11 @@ namespace {
 		pid_t	child_pid;
 		int	child_status;
 		while ((child_pid = waitpid(-1, &child_status, WNOHANG)) > 0) {
-			on_child_terminated(child_pid, child_status);
+			if (child_pid == keyserver_pid) {
+				throw Keyserver_died();
+			} else {
+				on_child_terminated(child_pid, child_status);
+			}
 		}
 		if (child_pid == -1) {
 			throw System_error("waitpid", "", errno);
@@ -409,12 +407,26 @@ namespace {
 	void cleanup ()
 	{
 		// only kill spare children; let other children continue to service their active connection
+		// our children don't need to do any cleanup, so just use SIGKILL so we can be sure they
+		// actually die
 		for (size_t i = 0; i < spare_children.size(); ++i) {
-			kill(spare_children[i], SIGTERM);
+			kill(spare_children[i], SIGKILL);
+		}
+
+		if (keyserver_pid != -1) {
+			kill(keyserver_pid, SIGKILL);
 		}
 
 		if (pid_file_created) {
 			unlink(pid_file.c_str());
+		}
+
+		if (keyserver_sockaddr.sun_path[0]) {
+			unlink(keyserver_sockaddr.sun_path);
+		}
+
+		if (!temp_directory.empty()) {
+			rmdir(temp_directory.c_str());
 		}
 	}
 }
@@ -464,6 +476,7 @@ try {
 	if (listening_sock == -1) {
 		throw System_error("socket", "", errno);
 	}
+	set_reuseaddr(listening_sock);
 	set_not_v6only(listening_sock);
 	if (transparent == TRANSPARENT_ON) {
 		set_transparent(listening_sock);
@@ -480,6 +493,20 @@ try {
 	}
 
 	if (listen(listening_sock, SOMAXCONN) == -1) {
+		throw System_error("listen", "", errno);
+	}
+
+	// Set up UNIX domain socket for communicating with the key server.
+	// Put it in a temporary directory with restrictive permissions so
+	// other users can't traverse its path.  We have to use a named
+	// socket as opposed to a socketpair because we need every child process
+	// to communicate with the key server using its own socket.  (Duping one
+	// end of a socketpair wouldn't work because then every child would
+	// be referring to the same underlying socket, which provides
+	// insufficient isolation.)
+	temp_directory = make_temp_directory();
+	int keyserver_sock = make_unix_socket(temp_directory + "/server.sock", &keyserver_sockaddr, &keyserver_sockaddr_len);
+	if (listen(keyserver_sock, SOMAXCONN) == -1) {
 		throw System_error("listen", "", errno);
 	}
 
@@ -500,6 +527,10 @@ try {
 		pid_file_out << getpid() << '\n';
 		pid_file_out.close();
 	}
+
+	// Spawn the master key server process
+	keyserver_pid = spawn(keyserver_main, keyserver_sock);
+	close(keyserver_sock);
 
 	// Spawn spare children to accept() and service connections
 	if (pipe(children_pipe) == -1) {
@@ -541,7 +572,7 @@ try {
 	cleanup();
 	return 0;
 } catch (const System_error& error) {
-	std::clog << "System error: " << error.syscall;
+	std::clog << "titus: System error: " << error.syscall;
 	if (!error.target.empty()) {
 		std::clog << ": " << error.target;
 	}
@@ -549,16 +580,21 @@ try {
 	cleanup();
 	return 3;
 } catch (const Openssl_error& error) {
-	std::clog << "OpenSSL error: " << error.message() << std::endl;
+	std::clog << "titus: OpenSSL error: " << error.message() << std::endl;
 	cleanup();
 	return 4;
 } catch (const Configuration_error& error) {
-	std::clog << "Configuration error: " << error.message << std::endl;
+	std::clog << "titus: Configuration error: " << error.message << std::endl;
 	cleanup();
 	return 5;
 } catch (const Too_many_failed_children& error) {
 	// TODO: better error reporting when this happens
-	std::clog << "Too many child processes failed." << std::endl;
+	std::clog << "titus: Too many child processes failed." << std::endl;
 	cleanup();
 	return 7;
+} catch (const Keyserver_died& error) {
+	// TODO: better error reporting when this happens
+	std::clog << "titus: Key server died." << std::endl;
+	cleanup();
+	return 8;
 }

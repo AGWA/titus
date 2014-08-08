@@ -25,9 +25,11 @@
  * authorization.
  */
 
-#ifndef CHILD_HPP
-#define CHILD_HPP
+#ifndef KEYSERVER_HPP
+#define KEYSERVER_HPP
 
-int child_main (void*);
+#include <openssl/rsa.h>
+
+int	keyserver_main (int arg_keyserver_sock);
 
 #endif

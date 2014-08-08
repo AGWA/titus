@@ -29,7 +29,6 @@
 #include "common.hpp"
 #include "util.hpp"
 #include "rsa_client.hpp"
-#include "rsa_server.hpp"
 #include <errno.h>
 #include <cstring>
 #include <cstdio>
@@ -56,23 +55,6 @@ namespace {
 		sigset_t empty_sigset;
 		sigemptyset(&empty_sigset);
 		sigprocmask(SIG_SETMASK, &empty_sigset, NULL);
-	}
-
-	void sigchld_handler (int)
-	{
-		// This will happen if the RSA server process (which is a child of the child proecss)
-		// terminates prematurely.  Usually, the RSA server process terminates only when it
-		// detects that its parent (the "child" process) has terminated.
-		_exit(8);
-	}
-
-	void install_sigchld_handler ()
-	{
-		struct sigaction		siginfo;
-		sigemptyset(&siginfo.sa_mask);
-		siginfo.sa_flags = 0;
-		siginfo.sa_handler = sigchld_handler;
-		sigaction(SIGCHLD, &siginfo, NULL);
 	}
 
 	class Pump {
@@ -300,54 +282,10 @@ namespace {
 		Pump pump(client_sock, client_ssl, backend_sock);
 		pump();
 	}
-
-	int rsa_server_main (int sock)
-	try {
-		// reseed OpenSSL RNG b/c we just forked
-		if (RAND_poll() != 1) {
-			throw Openssl_error(ERR_get_error());
-		}
-
-		// Load private key file
-		std::FILE*	fp = std::fopen(key_filename.c_str(), "r");
-		if (!fp) {
-			throw System_error("fopen", key_filename, errno);
-		}
-
-		RSA*		rsa = PEM_read_RSAPrivateKey(fp, NULL, NULL, NULL);
-		if (!rsa) {
-			unsigned long	code = ERR_get_error();
-			std::fclose(fp);
-			throw Openssl_error(code);
-		}
-
-		std::fclose(fp);
-
-		// Drop privileges
-		drop_privileges(chroot_directory, drop_uid_keyserver, drop_gid_keyserver);
-		restrict_file_descriptors();
-
-		// Read and respond to RSA operations
-		run_rsa_server(rsa, sock);
-		return 0;
-	} catch (const System_error& error) {
-		std::clog << "System error in RSA server: " << error.syscall;
-		if (!error.target.empty()) {
-			std::clog << ": " << error.target;
-		}
-		std::clog << ": " << std::strerror(error.number) << std::endl;
-		return 3;
-	} catch (const Openssl_error& error) {
-		std::clog << "OpenSSL error in RSA server: " << error.message() << std::endl;
-		return 4;
-	} catch (const Key_protocol_error& error) {
-		std::clog << "Key protocol error in RSA server: " << error.message << std::endl;
-		return 6;
-	}
 }
 
 
-int child_main ()
+int child_main (void*)
 try {
 	init_signals();
 
@@ -362,36 +300,17 @@ try {
 
 	close(children_pipe[0]);
 
-	// Fire up the RSA server.  Do this while we're still privileged (so we can read the
-	// private key file), and before we start talking to the network (which is risky).
-	int			rsa_server_sockpair[2];
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, rsa_server_sockpair) == -1) {
-		throw System_error("socketpair", "", errno);
+	// Connect to the key server over a UNIX domain socket. Do this while we're still
+	// privileged since it requires accessing the filesystem.
+	int			keyserver_client_sock;
+	if ((keyserver_client_sock = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+		throw System_error("socket(AF_UNIX)", "", errno);
+	}
+	if (connect(keyserver_client_sock, reinterpret_cast<struct sockaddr*>(&keyserver_sockaddr), keyserver_sockaddr_len) == -1) {
+		throw System_error("connect", keyserver_sockaddr.sun_path, errno);
 	}
 
-	pid_t			rsa_server_pid = fork();
-	if (rsa_server_pid == -1) {
-		throw System_error("fork", "", errno);
-	}
-	if (rsa_server_pid == 0) {
-		try {
-			close(listening_sock);
-			close(children_pipe[1]);
-			close(rsa_server_sockpair[0]);
-			_exit(rsa_server_main(rsa_server_sockpair[1]));
-		} catch (...) {
-			std::terminate();
-		}
-	}
-	close(rsa_server_sockpair[1]);
-	rsa_client_set_socket(rsa_server_sockpair[0]);
-
-	// Ping the RSA server to make sure it successfully started.  It might fail
-	// to start if the RSA key file was bad.
-	rsa_client_ping();
-
-	// if the RSA server terminates, terminate this process too:
-	install_sigchld_handler();
+	rsa_client_set_socket(keyserver_client_sock);
 
 	// Create the backend socket.  Since setting transparency requires privilege,
 	// we do it while we're still root.

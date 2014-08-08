@@ -5,7 +5,7 @@ PREFIX = /usr/local
 
 PROGRAMS = titus
 MANPAGES = titus.8
-OBJFILES = child.o common.o util.o dh.o rsa_client.o rsa_server.o titus.o
+OBJFILES = child.o common.o util.o dh.o keyserver.o rsa_client.o rsa_server.o titus.o
 
 all: $(PROGRAMS)
 

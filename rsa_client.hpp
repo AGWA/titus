@@ -34,6 +34,5 @@
 
 EVP_PKEY*	rsa_client_load_private_key (uintptr_t key_id, RSA* public_rsa);
 void		rsa_client_set_socket (int fd);
-void		rsa_client_ping ();
 
 #endif
