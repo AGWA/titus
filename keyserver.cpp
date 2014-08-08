@@ -35,10 +35,11 @@
 #include <openssl/rand.h>
 #include <openssl/err.h>
 #include <openssl/rsa.h>
+#include <vector>
 
 namespace {
-	int		keyserver_sock;
-	RSA*		rsa;
+	int			keyserver_sock;
+	std::vector<RSA*>	keys;
 
 	void init_signals ()
 	{
@@ -67,7 +68,7 @@ namespace {
 		restrict_file_descriptors();
 
 		// Read and respond to RSA operations
-		run_rsa_server(rsa, sock);
+		run_rsa_server(keys, sock);
 		return 0;
 	} catch (const System_error& error) {
 		std::clog << "System error in key server child: " << error.syscall;
@@ -98,20 +99,24 @@ try {
 		throw Openssl_error(ERR_get_error());
 	}
 
-	// Load private key file
-	std::FILE*	fp = std::fopen(key_filename.c_str(), "r");
-	if (!fp) {
-		throw System_error("fopen", key_filename, errno);
-	}
+	// Load private keys
+	keys.reserve(vhosts.size());
+	for (std::vector<Vhost>::iterator vhost(vhosts.begin()); vhost != vhosts.end(); ++vhost) {
+		std::FILE*	fp = std::fopen(vhost->key_filename.c_str(), "r");
+		if (!fp) {
+			throw System_error("fopen", vhost->key_filename, errno);
+		}
 
-	rsa = PEM_read_RSAPrivateKey(fp, NULL, NULL, NULL);
-	if (!rsa) {
-		unsigned long	code = ERR_get_error();
+		RSA*		rsa = PEM_read_RSAPrivateKey(fp, NULL, NULL, NULL);
+		if (!rsa) {
+			unsigned long	code = ERR_get_error();
+			std::fclose(fp);
+			throw Openssl_error(code);
+		}
+		keys.push_back(rsa);
+
 		std::fclose(fp);
-		throw Openssl_error(code);
 	}
-
-	std::fclose(fp);
 
 	// Accept and service connections
 	while (true) {

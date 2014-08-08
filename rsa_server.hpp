@@ -29,7 +29,8 @@
 #define RSA_SERVER_HPP
 
 #include <openssl/rsa.h>
+#include <vector>
 
-void		run_rsa_server (RSA*, int sock);
+void		run_rsa_server (const std::vector<RSA*>&, int sock);
 
 #endif

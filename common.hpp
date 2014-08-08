@@ -30,6 +30,7 @@
 
 #include "util.hpp"
 #include <string>
+#include <vector>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -37,11 +38,35 @@
 #include <openssl/rsa.h>
 #include <netinet/ip.h>
 
+typedef uintptr_t Vhost_id;
+
+struct Vhost {
+	Vhost_id		id;
+	std::string		local_address_string;
+	std::string		local_address_port;
+	struct sockaddr_in6	local_address;
+	std::string		backend_address_string;
+	std::string		backend_address_port;
+	struct sockaddr_in6	backend_address;
+	std::string		key_filename;
+	std::string		cert_filename;
+	EVP_PKEY*		key;	// not the actual private key; just an RSA client shell
+	X509*			cert;
+	std::vector<X509*>	chain_certs;
+
+	Vhost ()
+	{
+		id = 0;
+		std::memset(&local_address, 0, sizeof(local_address));
+		std::memset(&backend_address, 0, sizeof(backend_address));
+		key = NULL;
+		cert = NULL;
+	}
+};
+
 // Config:
-extern std::string		cert_filename;
-extern std::string		key_filename;
+extern std::vector<Vhost>	vhosts;			// sorted in order of vhost ID, starting from 0, strictly increasing
 extern Transparency		transparent;
-extern struct sockaddr_in6	backend_address;
 extern unsigned int		max_handshake_time;	// TLS handshake must complete within this # of seconds
 extern std::string		chroot_directory;	// empty to not chroot
 extern uid_t			drop_uid_network;	// UID for process that talks to network (-1 to not change)

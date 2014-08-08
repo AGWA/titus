@@ -63,8 +63,8 @@ namespace {
 	uint16_t		listening_port = 0;		// stored in host byte order
 	unsigned int		min_spare_children = 3;		// Minimum number of children ready and waiting to accept()
 	unsigned int		max_children = 100;		// Absolute maximum number of children, spare or not
-	std::string		backend_address_string;
-	std::string		backend_address_port;
+	bool			has_default_vhost = false;
+	Vhost			default_vhost;
 
 	// State specific to parent:
 	bool			pid_file_created = false;
@@ -212,15 +212,15 @@ namespace {
 
 	void read_config_file (const std::string& path);
 
-	void load_key_and_cert ()
+	void load_key_and_cert (Vhost& vhost)
 	{
-		if (access(key_filename.c_str(), R_OK) == -1) {
-			throw Configuration_error("Unable to read TLS key file: " + std::string(std::strerror(errno)));
+		if (access(vhost.key_filename.c_str(), R_OK) == -1) {
+			throw Configuration_error("Unable to read TLS key file: " + vhost.key_filename + ": " + std::string(std::strerror(errno)));
 		}
 
-		std::FILE*	fp = std::fopen(cert_filename.c_str(), "r");
+		std::FILE*	fp = std::fopen(vhost.cert_filename.c_str(), "r");
 		if (!fp) {
-			throw Configuration_error("Unable to read TLS cert file: " + std::string(std::strerror(errno)));
+			throw Configuration_error("Unable to read TLS cert file: " + vhost.cert_filename + ": " + std::string(std::strerror(errno)));
 		}
 
 		// Read the first certificate from the file, which is our certificate:
@@ -248,40 +248,61 @@ namespace {
 		}
 
 		// Create a RSA private key "client"
-		EVP_PKEY*	privkey = rsa_client_load_private_key(0, public_rsa);
+		EVP_PKEY*	privkey = rsa_client_load_private_key(vhost.id, public_rsa);
 		RSA_free(public_rsa);
 
 		// Use this private key for SSL:
-		if (SSL_CTX_use_PrivateKey(ssl_ctx, privkey) != 1) {
-			unsigned long code = ERR_get_error();
-			EVP_PKEY_free(privkey);
-			X509_free(crt);
-			std::fclose(fp);
-			throw Configuration_error("Unable to load TLS key: " + Openssl_error::message(code));
-		}
+		vhost.key = privkey;
 
 		// Use this certificate for SSL:
-		if (SSL_CTX_use_certificate(ssl_ctx, crt) != 1) {
-			unsigned long code = ERR_get_error();
-			X509_free(crt);
-			std::fclose(fp);
-			throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(code));
-		}
+		vhost.cert = crt;
 
 		// Now read the intermediate CA (chain) certificates:
 		while (X509* ca = PEM_read_X509(fp, NULL, NULL, NULL)) {
-			if (SSL_CTX_add_extra_chain_cert(ssl_ctx, ca) != 1) {
-				unsigned long code = ERR_get_error();
-				X509_free(ca);
-				std::fclose(fp);
-				throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(code));
-			}
+			vhost.chain_certs.push_back(ca);
 		}
 		unsigned long code = ERR_get_error();
 		std::fclose(fp);
 		if (!(ERR_GET_LIB(code) == ERR_LIB_PEM && ERR_GET_REASON(code) == PEM_R_NO_START_LINE)) {
 			// Not simply a harmless end-of-file error
-			throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(code));
+			throw Configuration_error("Unable to load TLS cert: " + vhost.cert_filename + ": " + Openssl_error::message(code));
+		}
+	}
+
+	void resolve_addresses (Vhost& vhost)
+	{
+		if (transparent == TRANSPARENT_ON) {
+			if (!vhost.backend_address_string.empty() || !vhost.backend_address_port.empty()) {
+				throw Configuration_error("backend and backend-address cannot be specified in transparent mode");
+			}
+		} else {
+			if (vhost.backend_address_port.empty()) {
+				throw Configuration_error("No backend-port specified");
+			}
+			resolve_address(&vhost.backend_address, vhost.backend_address_string, vhost.backend_address_port);
+		}
+
+		if (!vhost.local_address_string.empty() || !vhost.local_address_port.empty()) {
+			resolve_address(&vhost.local_address, vhost.local_address_string, vhost.local_address_port);
+		}
+	}
+
+	void process_vhost_param (Vhost& vhost, const std::string& key, const std::string& value)
+	{
+		if (key == "key") {
+			vhost.key_filename = value;
+		} else if (key == "cert") {
+			vhost.cert_filename = value;
+		} else if (key == "backend") {
+			vhost.backend_address_string = value;
+		} else if (key == "backend-port") {
+			vhost.backend_address_port = value;
+		} else if (key == "local-address") {
+			vhost.local_address_string = value;
+		} else if (key == "local-port") {
+			vhost.local_address_port = value;
+		} else {
+			throw Configuration_error("Unknown vhost parameter `" + key + "'");
 		}
 	}
 
@@ -297,10 +318,11 @@ namespace {
 			listening_port = std::atoi(value.c_str());
 		} else if (key == "transparent") {
 			transparent = parse_config_transparency(value);
-		} else if (key == "backend") {
-			backend_address_string = value;
+		} else if (key == "backend" || key == "backend-port" || key == "key" || key == "cert") {
+			has_default_vhost = true;
+			process_vhost_param(default_vhost, key, value);
 		} else if (key == "backend-port") {
-			backend_address_port = value;
+			default_vhost.backend_address_port = value;
 		} else if (key == "min-spare-children") {
 			min_spare_children = std::atoi(value.c_str());
 		} else if (key == "max-children") {
@@ -317,10 +339,6 @@ namespace {
 			drop_gid_keyserver = resolve_group(value);
 		} else if (key == "chroot") {
 			chroot_directory = value;
-		} else if (key == "key") {
-			key_filename = value;
-		} else if (key == "cert") {
-			cert_filename = value;
 		} else if (key == "ciphers") {
 			if (SSL_CTX_set_cipher_list(ssl_ctx, value.c_str()) != 1) {
 				throw Configuration_error("No TLS ciphers available");
@@ -375,6 +393,37 @@ namespace {
 		}
 	}
 
+	void read_config_file_vhost (Vhost& vhost, std::istream& config_in)
+	{
+		while (config_in.good() && config_in.peek() != -1) {
+			// Skip comments (lines starting with #) and blank lines
+			if (config_in.peek() == '#' || config_in.peek() == '\n') {
+				config_in.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+				continue;
+			}
+			if (config_in.peek() != ' ' && config_in.peek() != '\t') {
+				// line does not start with whitespace => end of vhost section
+				break;
+			}
+
+			// skip whitespace
+			config_in >> std::ws;
+
+			// read directive name
+			std::string		directive;
+			config_in >> directive;
+
+			// skip whitespace
+			config_in >> std::ws;
+
+			// read directive value
+			std::string		value;
+			std::getline(config_in, value);
+
+			process_vhost_param(vhost, directive, value);
+		}
+	}
+
 	void read_config_file (const std::string& path)
 	{
 		std::ifstream	config_in(path.c_str());
@@ -393,14 +442,19 @@ namespace {
 			std::string		directive;
 			config_in >> directive;
 
-			// skip whitespace
-			config_in >> std::ws;
+			if (directive == "vhost") {
+				vhosts.push_back(Vhost());
+				read_config_file_vhost(vhosts.back(), config_in);
+			} else {
+				// skip whitespace
+				config_in >> std::ws;
 
-			// read directive value
-			std::string		value;
-			std::getline(config_in, value);
+				// read directive value
+				std::string		value;
+				std::getline(config_in, value);
 
-			process_config_param(directive, value);
+				process_config_param(directive, value);
+			}
 		}
 	}
 
@@ -458,17 +512,13 @@ try {
 		}
 	}
 
-	load_key_and_cert();
-
-	if (transparent == TRANSPARENT_ON) {
-		if (!backend_address_string.empty() || !backend_address_port.empty()) {
-			throw Configuration_error("backend and backend-address cannot be specified in transparent mode");
-		}
-	} else {
-		if (backend_address_port.empty()) {
-			throw Configuration_error("No backend-port specified");
-		}
-		resolve_address(&backend_address, backend_address_string, backend_address_port);
+	if (has_default_vhost) {
+		vhosts.push_back(default_vhost);
+	}
+	for (size_t i = 0; i < vhosts.size(); ++i) {
+		vhosts[i].id = i;
+		load_key_and_cert(vhosts[i]);
+		resolve_addresses(vhosts[i]);
 	}
 
 	// Listen

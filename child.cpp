@@ -348,6 +348,43 @@ try {
 	// Prevent the creation of new file descriptors.
 	restrict_file_descriptors();
 
+	// Find a matching vhost based on the socket's local address
+	struct sockaddr_in6	local_address;
+	socklen_t		local_address_len = sizeof(local_address);
+	if (getsockname(client_sock, reinterpret_cast<struct sockaddr*>(&local_address), &local_address_len) == -1) {
+		throw System_error("getsockname", "", errno);
+	}
+
+	std::vector<Vhost>::iterator		vhost(vhosts.begin());
+	for (; vhost != vhosts.end(); ++vhost) {
+		if (std::memcmp(&vhost->local_address.sin6_addr, &in6addr_any, sizeof(in6_addr)) != 0 &&
+				std::memcmp(&vhost->local_address.sin6_addr, &local_address.sin6_addr, sizeof(in6_addr)) != 0) {
+			continue;
+		}
+		if (vhost->local_address.sin6_port != 0 && vhost->local_address.sin6_port != local_address.sin6_port) {
+			continue;
+		}
+		break;
+	}
+
+	if (vhost == vhosts.end()) {
+		std::clog << "No mathing vhost." << std::endl;
+		return 7;
+	}
+
+	// Load in the vhost's key and certificates
+	if (SSL_CTX_use_PrivateKey(ssl_ctx, vhost->key) != 1) {
+		throw Openssl_error(ERR_get_error());
+	}
+	if (SSL_CTX_use_certificate(ssl_ctx, vhost->cert) != 1) {
+		throw Openssl_error(ERR_get_error());
+	}
+	for (std::vector<X509*>::iterator it(vhost->chain_certs.begin()); it != vhost->chain_certs.end(); ++it) {
+		if (SSL_CTX_add_extra_chain_cert(ssl_ctx, *it) != 1) {
+			throw Openssl_error(ERR_get_error());
+		}
+	}
+
 	// SSL Handshake
 	SSL*			ssl = SSL_new(ssl_ctx);
 	if (!SSL_set_fd(ssl, client_sock)) {
@@ -408,18 +445,13 @@ try {
 			throw System_error("connect", "", errno);
 		}
 	} else {
-		if (std::memcmp(&backend_address.sin6_addr, &in6addr_any, sizeof(struct in6_addr)) == 0) {
+		if (std::memcmp(&vhost->backend_address.sin6_addr, &in6addr_any, sizeof(struct in6_addr)) == 0) {
 			// Backend IP address not specified, so use the local address of the client socket
-			struct sockaddr_in6	local_address;
-			socklen_t		local_address_len = sizeof(local_address);
-			if (getsockname(client_sock, reinterpret_cast<struct sockaddr*>(&local_address), &local_address_len) == -1) {
-				throw System_error("getsockname", "", errno);
-			}
-			std::memcpy(&backend_address.sin6_addr, &local_address.sin6_addr, sizeof(struct in6_addr));
+			std::memcpy(&vhost->backend_address.sin6_addr, &local_address.sin6_addr, sizeof(struct in6_addr));
 		}
 
-		socklen_t		backend_address_len = sizeof(backend_address);
-		if (connect(backend_sock, reinterpret_cast<const struct sockaddr*>(&backend_address), backend_address_len) == -1) {
+		socklen_t		backend_address_len = sizeof(vhost->backend_address);
+		if (connect(backend_sock, reinterpret_cast<const struct sockaddr*>(&vhost->backend_address), backend_address_len) == -1) {
 			throw System_error("connect", "", errno);
 		}
 	}
