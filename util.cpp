@@ -204,7 +204,7 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 	hints.ai_protocol = 0;
 
 	struct addrinfo*	addrs;
-	int			res = getaddrinfo(host.empty() ? NULL : host.c_str(), port.c_str(), &hints, &addrs);
+	int			res = getaddrinfo(host.empty() ? NULL : host.c_str(), port.empty() ? NULL : port.c_str(), &hints, &addrs);
 	if (res != 0) {
 		throw Configuration_error("Unable to resolve [" + host + "]:" + port + " - " + gai_strerror(res));
 	}
@@ -212,7 +212,13 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 		freeaddrinfo(addrs);
 		throw Configuration_error("[" + host + "]:" + port + " resolves to more than one address");
 	}
-	std::memcpy(address, addrs->ai_addr, addrs->ai_addrlen);
+	std::memcpy(address, addrs->ai_addr, sizeof(*address));
+	if (host.empty()) {
+		std::memcpy(&address->sin6_addr, &in6addr_any, sizeof(in6_addr));
+	}
+	if (port.empty()) {
+		address->sin6_port = htons(0);
+	}
 	freeaddrinfo(addrs);
 }
 
