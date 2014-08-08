@@ -170,4 +170,10 @@ template<class... Arg> pid_t spawn (int (*main_function)(Arg...), Arg... arg)
 	return pid;
 }
 
+template<class T, class U> inline void set_bit (T& bits, U bit, bool on)
+{
+	if (on)	bits |= bit;
+	else	bits &= ~bit;
+}
+
 #endif

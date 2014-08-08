@@ -355,38 +355,29 @@ try {
 		throw System_error("getsockname", "", errno);
 	}
 
-	std::vector<Vhost>::iterator		vhost(vhosts.begin());
-	for (; vhost != vhosts.end(); ++vhost) {
-		if (std::memcmp(&vhost->local_address.sin6_addr, &in6addr_any, sizeof(in6_addr)) != 0 &&
-				std::memcmp(&vhost->local_address.sin6_addr, &local_address.sin6_addr, sizeof(in6_addr)) != 0) {
+	// Filter out vhosts that don't match
+	std::vector<Vhost>	candidate_vhosts;
+	for (auto&& vhost : vhosts) {
+		if (std::memcmp(&vhost.local_address.sin6_addr, &in6addr_any, sizeof(in6_addr)) != 0 &&
+				std::memcmp(&vhost.local_address.sin6_addr, &local_address.sin6_addr, sizeof(in6_addr)) != 0) {
 			continue;
 		}
-		if (vhost->local_address.sin6_port != 0 && vhost->local_address.sin6_port != local_address.sin6_port) {
+		if (vhost.local_address.sin6_port != 0 && vhost.local_address.sin6_port != local_address.sin6_port) {
 			continue;
 		}
-		break;
+		candidate_vhosts.push_back(std::move(vhost));
 	}
+	vhosts = std::move(candidate_vhosts);
 
-	if (vhost == vhosts.end()) {
+	if (vhosts.empty()) {
 		std::clog << "No mathing vhost." << std::endl;
 		return 7;
 	}
 
-	// Load in the vhost's key and certificates
-	if (SSL_CTX_use_PrivateKey(ssl_ctx, vhost->key.get()) != 1) {
-		throw Openssl_error(ERR_get_error());
-	}
-	if (SSL_CTX_use_certificate(ssl_ctx, vhost->cert.get()) != 1) {
-		throw Openssl_error(ERR_get_error());
-	}
-	for (auto&& chain_cert : vhost->chain_certs) {
-		if (SSL_CTX_add_extra_chain_cert(ssl_ctx, chain_cert.get()) != 1) {
-			throw Openssl_error(ERR_get_error());
-		}
-	}
+	active_vhost = &vhosts[0];
 
 	// SSL Handshake
-	openssl_unique_ptr<SSL>		ssl(SSL_new(ssl_ctx));
+	openssl_unique_ptr<SSL>		ssl(SSL_new(active_vhost->ssl_ctx.get()));
 	if (!SSL_set_fd(ssl.get(), client_sock)) {
 		throw Openssl_error(ERR_get_error());
 	}
@@ -445,13 +436,13 @@ try {
 			throw System_error("connect", "", errno);
 		}
 	} else {
-		if (std::memcmp(&vhost->backend_address.sin6_addr, &in6addr_any, sizeof(struct in6_addr)) == 0) {
+		if (std::memcmp(&active_vhost->backend_address.sin6_addr, &in6addr_any, sizeof(struct in6_addr)) == 0) {
 			// Backend IP address not specified, so use the local address of the client socket
-			std::memcpy(&vhost->backend_address.sin6_addr, &local_address.sin6_addr, sizeof(struct in6_addr));
+			std::memcpy(&active_vhost->backend_address.sin6_addr, &local_address.sin6_addr, sizeof(struct in6_addr));
 		}
 
-		socklen_t		backend_address_len = sizeof(vhost->backend_address);
-		if (connect(backend_sock, reinterpret_cast<const struct sockaddr*>(&vhost->backend_address), backend_address_len) == -1) {
+		socklen_t		backend_address_len = sizeof(active_vhost->backend_address);
+		if (connect(backend_sock, reinterpret_cast<const struct sockaddr*>(&active_vhost->backend_address), backend_address_len) == -1) {
 			throw System_error("connect", "", errno);
 		}
 	}

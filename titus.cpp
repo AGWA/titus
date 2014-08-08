@@ -66,8 +66,13 @@ namespace {
 	unsigned int		max_children = 100;		// Absolute maximum number of children, spare or not
 	bool			has_default_vhost = false;
 	Vhost			default_vhost;
+	long			ssl_options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION | SSL_OP_CIPHER_SERVER_PREFERENCE;
+	std::string		ciphers;
+	openssl_unique_ptr<DH>	dhgroup;
+	openssl_unique_ptr<EC_KEY> ecdhcurve;
 
 	// State specific to parent:
+	bool			using_sni = false;
 	bool			pid_file_created = false;
 	unsigned int		num_children = 0;		// Current # of children, spare or not
 	std::vector<pid_t>	spare_children;			// PIDs of children just waiting to accept
@@ -213,8 +218,48 @@ namespace {
 
 	void read_config_file (const std::string& path);
 
-	void load_key_and_cert (Vhost& vhost)
+	int ssl_servername_cb (SSL* ssl, int*, void*)
 	{
+		const char*	servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+		if (servername) {
+			for (Vhost& vhost : vhosts) {
+				if (vhost.servername.empty() || vhost.servername == servername) {
+					SSL_set_SSL_CTX(ssl, vhost.ssl_ctx.get());
+					active_vhost = &vhost;
+					break;
+				}
+			}
+		}
+		return SSL_TLSEXT_ERR_OK;
+	}
+
+	void init_ssl_ctx (Vhost& vhost)
+	{
+		vhost.ssl_ctx.reset(SSL_CTX_new(SSLv23_method()));
+		if (!vhost.ssl_ctx) {
+			throw Openssl_error(ERR_get_error());
+		}
+		SSL_CTX_set_mode(vhost.ssl_ctx.get(), SSL_MODE_AUTO_RETRY);
+		SSL_CTX_clear_options(vhost.ssl_ctx.get(), SSL_OP_NO_COMPRESSION | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_TLSv1_2 | SSL_OP_CIPHER_SERVER_PREFERENCE);
+		SSL_CTX_set_options(vhost.ssl_ctx.get(), SSL_OP_SINGLE_DH_USE | SSL_OP_SINGLE_ECDH_USE | ssl_options);
+
+		if (SSL_CTX_set_cipher_list(vhost.ssl_ctx.get(), ciphers.c_str()) != 1) {
+			throw Configuration_error("No TLS ciphers available from " + ciphers);
+		}
+		if (using_sni) {
+			SSL_CTX_set_tlsext_servername_callback(vhost.ssl_ctx.get(), ssl_servername_cb);
+		}
+		if (dhgroup) {
+			if (SSL_CTX_set_tmp_dh(vhost.ssl_ctx.get(), dhgroup.get()) != 1) {
+				throw Configuration_error("Unable to set DH parameters: " + Openssl_error::message(ERR_get_error()));
+			}
+		}
+		if (ecdhcurve) {
+			if (SSL_CTX_set_tmp_ecdh(vhost.ssl_ctx.get(), ecdhcurve.get()) != 1) {
+				throw Configuration_error("Unable to set ECDH curve: " + Openssl_error::message(ERR_get_error()));
+			}
+		}
+
 		if (access(vhost.key_filename.c_str(), R_OK) == -1) {
 			throw Configuration_error("Unable to read TLS key file: " + vhost.key_filename + ": " + std::string(std::strerror(errno)));
 		}
@@ -247,14 +292,24 @@ namespace {
 		public_rsa.reset();
 
 		// Use this private key for SSL:
-		vhost.key = std::move(privkey);
+		if (SSL_CTX_use_PrivateKey(vhost.ssl_ctx.get(), privkey.get()) != 1) {
+			throw Openssl_error(ERR_get_error());
+		}
+		privkey.release(); // now owned by ssl_ctx
 
 		// Use this certificate for SSL:
-		vhost.cert = std::move(crt);
+		if (SSL_CTX_use_certificate(vhost.ssl_ctx.get(), crt.get()) != 1) {
+			throw Openssl_error(ERR_get_error());
+		}
+		crt.release(); // now owned by ssl_ctx
 
 		// Now read the intermediate CA (chain) certificates:
-		while (X509* ca = PEM_read_X509(fp.get(), NULL, NULL, NULL)) {
-			vhost.chain_certs.push_back(openssl_unique_ptr<X509>(ca));
+		while (X509* ca_p = PEM_read_X509(fp.get(), NULL, NULL, NULL)) {
+			openssl_unique_ptr<X509> ca(ca_p);
+			if (SSL_CTX_add_extra_chain_cert(vhost.ssl_ctx.get(), ca.get()) != 1) {
+				throw Openssl_error(ERR_get_error());
+			}
+			ca.release(); // now owned by ssl_ctx
 		}
 		const unsigned long code = ERR_get_error();
 		if (!(ERR_GET_LIB(code) == ERR_LIB_PEM && ERR_GET_REASON(code) == PEM_R_NO_START_LINE)) {
@@ -295,6 +350,9 @@ namespace {
 			vhost.local_address_string = value;
 		} else if (key == "local-port") {
 			vhost.local_address_port = value;
+		} else if (key == "sni-name") {
+			using_sni = true;
+			vhost.servername = value;
 		} else {
 			throw Configuration_error("Unknown vhost parameter `" + key + "'");
 		}
@@ -334,9 +392,7 @@ namespace {
 		} else if (key == "chroot") {
 			chroot_directory = value;
 		} else if (key == "ciphers") {
-			if (SSL_CTX_set_cipher_list(ssl_ctx, value.c_str()) != 1) {
-				throw Configuration_error("No TLS ciphers available");
-			}
+			ciphers = value;
 		} else if (key == "dhgroup") {
 			openssl_unique_ptr<DH>	dh;
 			// TODO: support custom DH parameters, additional pre-defined groups
@@ -349,9 +405,7 @@ namespace {
 			} else {
 				throw Configuration_error("Unknown DH group `" + value + "'");
 			}
-			if (SSL_CTX_set_tmp_dh(ssl_ctx, dh.get()) != 1) {
-				throw Configuration_error("Unable to set DH parameters: " + Openssl_error::message(ERR_get_error()));
-			}
+			dhgroup = std::move(dh);
 		} else if (key == "ecdhcurve") {
 			int	nid = OBJ_sn2nid(value.c_str());
 			if (nid == NID_undef) {
@@ -361,21 +415,19 @@ namespace {
 			if (!ecdh) {
 				throw Configuration_error("Unable to create ECDH curve: " + Openssl_error::message(ERR_get_error()));
 			}
-			if (SSL_CTX_set_tmp_ecdh(ssl_ctx, ecdh.get()) != 1) {
-				throw Configuration_error("Unable to set ECDH curve: " + Openssl_error::message(ERR_get_error()));
-			}
+			ecdhcurve = std::move(ecdh);
 		} else if (key == "compression") {
-			ssl_ctx_set_option(SSL_OP_NO_COMPRESSION, !parse_config_bool(value));
+			set_bit(ssl_options, SSL_OP_NO_COMPRESSION, !parse_config_bool(value));
 		} else if (key == "sslv3") {
-			ssl_ctx_set_option(SSL_OP_NO_SSLv3, !parse_config_bool(value));
+			set_bit(ssl_options, SSL_OP_NO_SSLv3, !parse_config_bool(value));
 		} else if (key == "tlsv1") {
-			ssl_ctx_set_option(SSL_OP_NO_TLSv1, !parse_config_bool(value));
+			set_bit(ssl_options, SSL_OP_NO_TLSv1, !parse_config_bool(value));
 		} else if (key == "tlsv1.1") {
-			ssl_ctx_set_option(SSL_OP_NO_TLSv1_1, !parse_config_bool(value));
+			set_bit(ssl_options, SSL_OP_NO_TLSv1_1, !parse_config_bool(value));
 		} else if (key == "tlsv1.2") {
-			ssl_ctx_set_option(SSL_OP_NO_TLSv1_2, !parse_config_bool(value));
+			set_bit(ssl_options, SSL_OP_NO_TLSv1_2, !parse_config_bool(value));
 		} else if (key == "honor-client-cipher-order") {
-			ssl_ctx_set_option(SSL_OP_CIPHER_SERVER_PREFERENCE, !parse_config_bool(value));
+			set_bit(ssl_options, SSL_OP_CIPHER_SERVER_PREFERENCE, !parse_config_bool(value));
 		} else {
 			throw Configuration_error("Unknown config parameter `" + key + "'");
 		}
@@ -481,12 +533,6 @@ try {
 	ERR_load_crypto_strings();
 	SSL_library_init();
 	SSL_load_error_strings();
-	ssl_ctx = SSL_CTX_new(SSLv23_method());
-	if (!ssl_ctx) {
-		throw Openssl_error(ERR_get_error());
-	}
-	SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
-	SSL_CTX_set_options(ssl_ctx, SSL_OP_SINGLE_DH_USE | SSL_OP_SINGLE_ECDH_USE | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION | SSL_OP_CIPHER_SERVER_PREFERENCE);
 
 	// Command line arguments come in pairs of the form "--name value" and correspond
 	// directly to the name/value option pairs in the config file (a la OpenVPN).
@@ -505,9 +551,12 @@ try {
 	}
 	for (size_t i = 0; i < vhosts.size(); ++i) {
 		vhosts[i].id = i;
-		load_key_and_cert(vhosts[i]);
+		init_ssl_ctx(vhosts[i]);
 		resolve_addresses(vhosts[i]);
 	}
+	// Free up some memory that's no longer needed:
+	dhgroup.reset();
+	ecdhcurve.reset();
 
 	// Listen
 	listening_sock = socket(AF_INET6, SOCK_STREAM, 0);

@@ -48,11 +48,10 @@ struct Vhost {
 	std::string				backend_address_string;
 	std::string				backend_address_port;
 	struct sockaddr_in6			backend_address;
+	std::string				servername;
 	std::string				key_filename;
 	std::string				cert_filename;
-	openssl_unique_ptr<EVP_PKEY>		key;	// not the actual private key; just an RSA client shell
-	openssl_unique_ptr<X509>		cert;
-	std::vector<openssl_unique_ptr<X509>>	chain_certs;
+	openssl_unique_ptr<SSL_CTX>		ssl_ctx;
 
 	Vhost ()
 	{
@@ -76,17 +75,6 @@ extern int			listening_sock;
 extern int			children_pipe[2];		// Used by children to tell us when they accept a connection
 extern struct sockaddr_un	keyserver_sockaddr;
 extern socklen_t		keyserver_sockaddr_len;
-
-// OpenSSL state:
-extern SSL_CTX*			ssl_ctx;
-
-inline void ssl_ctx_set_option (long option, bool state)
-{
-	if (state) {
-		SSL_CTX_set_options(ssl_ctx, option);
-	} else {
-		SSL_CTX_clear_options(ssl_ctx, option);
-	}
-}
+extern Vhost*			active_vhost;
 
 #endif
