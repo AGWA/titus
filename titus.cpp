@@ -265,6 +265,14 @@ namespace {
 			throw Configuration_error("Unable to read TLS cert file: " + vhost.cert_filename + ": " + std::string(std::strerror(errno)));
 		}
 
+		// Try to read a private key from the file.  For isolation, titus doesn't allow mixing private keys
+		// and certs in the same file, so if we can successfully read the private key, error out.
+		if (EVP_PKEY* privkey = PEM_read_PrivateKey(fp.get(), NULL, NULL, NULL)) {
+			EVP_PKEY_free(privkey);
+			throw Configuration_error("TLS cert file " + vhost.cert_filename + " contains a private key");
+		}
+		fseek(fp.get(), 0, SEEK_SET);
+
 		// Read the first certificate from the file, which is our certificate:
 		openssl_unique_ptr<X509>	crt(PEM_read_X509_AUX(fp.get(), NULL, NULL, NULL));
 		if (!crt) {
