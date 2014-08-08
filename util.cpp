@@ -242,7 +242,7 @@ gid_t resolve_group (const std::string& group)
 	return grp->gr_gid;
 }
 
-int make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen_t* addr_len)
+filedesc make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen_t* addr_len)
 {
 	if (path.size() + 1 >= sizeof(addr->sun_path)) {
 		throw System_error("make_unix_socket", path, ENAMETOOLONG);
@@ -252,7 +252,7 @@ int make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen
 	addr->sun_family = AF_UNIX;
 	std::strcpy(addr->sun_path, path.c_str());
 	*addr_len = sizeof(addr->sun_family) + path.size();
-	int sock;
+	filedesc sock;
 	if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
 		throw System_error("socket(AF_UNIX)", "", errno);
 	}
@@ -262,7 +262,7 @@ int make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen
 	return sock;
 }
 
-int make_unix_socket (const std::string& path)
+filedesc make_unix_socket (const std::string& path)
 {
 	struct sockaddr_un addr;
 	socklen_t addr_len;

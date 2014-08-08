@@ -31,6 +31,7 @@
 #include "dh.hpp"
 #include "rsa_client.hpp"
 #include "keyserver.hpp"
+#include "filedesc.hpp"
 #include <fstream>
 #include <limits>
 #include <sys/types.h>
@@ -127,7 +128,7 @@ namespace {
 	void spawn_children ()
 	{
 		while (num_spare_children() < min_spare_children && num_children < max_children) {
-			pid_t		pid = spawn(child_main, (void*)0);
+			pid_t		pid = spawn(child_main);
 
 			++num_children; // upper bounded by max_children
 			spare_children.push_back(pid);
@@ -218,51 +219,44 @@ namespace {
 			throw Configuration_error("Unable to read TLS key file: " + vhost.key_filename + ": " + std::string(std::strerror(errno)));
 		}
 
-		std::FILE*	fp = std::fopen(vhost.cert_filename.c_str(), "r");
+		cstdio_unique_ptr<std::FILE>	fp(std::fopen(vhost.cert_filename.c_str(), "r"));
 		if (!fp) {
 			throw Configuration_error("Unable to read TLS cert file: " + vhost.cert_filename + ": " + std::string(std::strerror(errno)));
 		}
 
 		// Read the first certificate from the file, which is our certificate:
-		X509*		crt = PEM_read_X509_AUX(fp, NULL, NULL, NULL);
+		openssl_unique_ptr<X509>	crt(PEM_read_X509_AUX(fp.get(), NULL, NULL, NULL));
 		if (!crt) {
-			unsigned long code = ERR_get_error();
-			std::fclose(fp);
-			throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(code));
+			throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(ERR_get_error()));
 		}
 
 		// Get the RSA public key from it:
-		EVP_PKEY*	pubkey = X509_get_pubkey(crt);
+		EVP_PKEY*			pubkey = X509_get_pubkey(crt.get());
 		if (!pubkey) {
-			X509_free(crt);
-			std::fclose(fp);
 			throw Configuration_error("Unable to load TLS cert: malformed X509 file?");
 		}
 
-		RSA*		public_rsa = EVP_PKEY_get1_RSA(pubkey);
+		openssl_unique_ptr<RSA>		public_rsa(EVP_PKEY_get1_RSA(pubkey));
 		if (!public_rsa) {
 			// not an RSA key
-			X509_free(crt);
-			std::fclose(fp);
 			throw Configuration_error("Unable to load TLS cert: does not correspond to an RSA key");
 		}
 
 		// Create a RSA private key "client"
-		EVP_PKEY*	privkey = rsa_client_load_private_key(vhost.id, public_rsa);
-		RSA_free(public_rsa);
+		openssl_unique_ptr<EVP_PKEY>	privkey(rsa_client_load_private_key(vhost.id, public_rsa.get()));
+		public_rsa.reset();
 
 		// Use this private key for SSL:
-		vhost.key = privkey;
+		vhost.key = std::move(privkey);
 
 		// Use this certificate for SSL:
-		vhost.cert = crt;
+		vhost.cert = std::move(crt);
 
 		// Now read the intermediate CA (chain) certificates:
-		while (X509* ca = PEM_read_X509(fp, NULL, NULL, NULL)) {
-			vhost.chain_certs.push_back(ca);
+		while (X509* ca = PEM_read_X509(fp.get(), NULL, NULL, NULL)) {
+			vhost.chain_certs.push_back(openssl_unique_ptr<X509>(ca));
 		}
-		unsigned long code = ERR_get_error();
-		std::fclose(fp);
+		const unsigned long code = ERR_get_error();
 		if (!(ERR_GET_LIB(code) == ERR_LIB_PEM && ERR_GET_REASON(code) == PEM_R_NO_START_LINE)) {
 			// Not simply a harmless end-of-file error
 			throw Configuration_error("Unable to load TLS cert: " + vhost.cert_filename + ": " + Openssl_error::message(code));
@@ -344,7 +338,7 @@ namespace {
 				throw Configuration_error("No TLS ciphers available");
 			}
 		} else if (key == "dhgroup") {
-			DH*	dh;
+			openssl_unique_ptr<DH>	dh;
 			// TODO: support custom DH parameters, additional pre-defined groups
 			if (value == "14") {
 				dh = make_dh(dh_group14_prime, dh_group14_generator);
@@ -355,27 +349,21 @@ namespace {
 			} else {
 				throw Configuration_error("Unknown DH group `" + value + "'");
 			}
-			if (SSL_CTX_set_tmp_dh(ssl_ctx, dh) != 1) {
-				unsigned long err(ERR_get_error());
-				DH_free(dh);
-				throw Configuration_error("Unable to set DH parameters: " + Openssl_error::message(err));
+			if (SSL_CTX_set_tmp_dh(ssl_ctx, dh.get()) != 1) {
+				throw Configuration_error("Unable to set DH parameters: " + Openssl_error::message(ERR_get_error()));
 			}
-			DH_free(dh);
 		} else if (key == "ecdhcurve") {
 			int	nid = OBJ_sn2nid(value.c_str());
 			if (nid == NID_undef) {
 				throw Configuration_error("Unknown ECDH curve `" + value + "'");
 			}
-			EC_KEY*	ecdh = EC_KEY_new_by_curve_name(nid);
+			openssl_unique_ptr<EC_KEY>	ecdh(EC_KEY_new_by_curve_name(nid));
 			if (!ecdh) {
 				throw Configuration_error("Unable to create ECDH curve: " + Openssl_error::message(ERR_get_error()));
 			}
-			if (SSL_CTX_set_tmp_ecdh(ssl_ctx, ecdh) != 1) {
-				unsigned long err(ERR_get_error());
-				EC_KEY_free(ecdh);
-				throw Configuration_error("Unable to set ECDH curve: " + Openssl_error::message(err));
+			if (SSL_CTX_set_tmp_ecdh(ssl_ctx, ecdh.get()) != 1) {
+				throw Configuration_error("Unable to set ECDH curve: " + Openssl_error::message(ERR_get_error()));
 			}
-			EC_KEY_free(ecdh);
 		} else if (key == "compression") {
 			ssl_ctx_set_option(SSL_OP_NO_COMPRESSION, !parse_config_bool(value));
 		} else if (key == "sslv3") {
@@ -513,7 +501,7 @@ try {
 	}
 
 	if (has_default_vhost) {
-		vhosts.push_back(default_vhost);
+		vhosts.push_back(std::move(default_vhost));
 	}
 	for (size_t i = 0; i < vhosts.size(); ++i) {
 		vhosts[i].id = i;
@@ -555,7 +543,7 @@ try {
 	// be referring to the same underlying socket, which provides
 	// insufficient isolation.)
 	temp_directory = make_temp_directory();
-	int keyserver_sock = make_unix_socket(temp_directory + "/server.sock", &keyserver_sockaddr, &keyserver_sockaddr_len);
+	filedesc keyserver_sock(make_unix_socket(temp_directory + "/server.sock", &keyserver_sockaddr, &keyserver_sockaddr_len));
 	if (listen(keyserver_sock, SOMAXCONN) == -1) {
 		throw System_error("listen", "", errno);
 	}
@@ -579,8 +567,7 @@ try {
 	}
 
 	// Spawn the master key server process
-	keyserver_pid = spawn(keyserver_main, keyserver_sock);
-	close(keyserver_sock);
+	keyserver_pid = spawn(keyserver_main, std::move(keyserver_sock));
 
 	// Spawn spare children to accept() and service connections
 	if (pipe(children_pipe) == -1) {

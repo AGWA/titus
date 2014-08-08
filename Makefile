@@ -1,5 +1,6 @@
 CXX = c++
 CXXFLAGS ?= -Wall -Wextra -pedantic -O2
+CXXFLAGS += -std=c++11
 LDFLAGS += -lcrypto -lssl
 PREFIX = /usr/local
 

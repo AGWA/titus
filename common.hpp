@@ -41,26 +41,23 @@
 typedef uintptr_t Vhost_id;
 
 struct Vhost {
-	Vhost_id		id;
-	std::string		local_address_string;
-	std::string		local_address_port;
-	struct sockaddr_in6	local_address;
-	std::string		backend_address_string;
-	std::string		backend_address_port;
-	struct sockaddr_in6	backend_address;
-	std::string		key_filename;
-	std::string		cert_filename;
-	EVP_PKEY*		key;	// not the actual private key; just an RSA client shell
-	X509*			cert;
-	std::vector<X509*>	chain_certs;
+	Vhost_id				id{};
+	std::string				local_address_string;
+	std::string				local_address_port;
+	struct sockaddr_in6			local_address;
+	std::string				backend_address_string;
+	std::string				backend_address_port;
+	struct sockaddr_in6			backend_address;
+	std::string				key_filename;
+	std::string				cert_filename;
+	openssl_unique_ptr<EVP_PKEY>		key;	// not the actual private key; just an RSA client shell
+	openssl_unique_ptr<X509>		cert;
+	std::vector<openssl_unique_ptr<X509>>	chain_certs;
 
 	Vhost ()
 	{
-		id = 0;
 		std::memset(&local_address, 0, sizeof(local_address));
 		std::memset(&backend_address, 0, sizeof(backend_address));
-		key = NULL;
-		cert = NULL;
 	}
 };
 

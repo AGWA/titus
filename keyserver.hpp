@@ -29,7 +29,8 @@
 #define KEYSERVER_HPP
 
 #include <openssl/rsa.h>
+#include "util.hpp"
 
-int	keyserver_main (int arg_keyserver_sock);
+int	keyserver_main (filedesc arg_keyserver_sock);
 
 #endif

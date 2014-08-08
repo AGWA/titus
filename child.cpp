@@ -285,7 +285,7 @@ namespace {
 }
 
 
-int child_main (void*)
+int child_main ()
 try {
 	init_signals();
 
@@ -302,7 +302,7 @@ try {
 
 	// Connect to the key server over a UNIX domain socket. Do this while we're still
 	// privileged since it requires accessing the filesystem.
-	int			keyserver_client_sock;
+	filedesc		keyserver_client_sock;
 	if ((keyserver_client_sock = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
 		throw System_error("socket(AF_UNIX)", "", errno);
 	}
@@ -310,11 +310,11 @@ try {
 		throw System_error("connect", keyserver_sockaddr.sun_path, errno);
 	}
 
-	rsa_client_set_socket(keyserver_client_sock);
+	rsa_client_set_socket(std::move(keyserver_client_sock));
 
 	// Create the backend socket.  Since setting transparency requires privilege,
 	// we do it while we're still root.
-	int			backend_sock = socket(AF_INET6, SOCK_STREAM, 0);
+	filedesc		backend_sock(socket(AF_INET6, SOCK_STREAM, 0));
 	if (backend_sock == -1) {
 		throw System_error("socket", "", errno);
 	}
@@ -327,7 +327,7 @@ try {
 	drop_privileges(chroot_directory, drop_uid_network, drop_gid_network);
 
 	// Accept client connection.
-	int			client_sock;
+	filedesc		client_sock;
 	struct sockaddr_in6	client_address;
 	socklen_t		client_address_len = sizeof(client_address);
 	while ((client_sock = accept(listening_sock, reinterpret_cast<struct sockaddr*>(&client_address), &client_address_len)) == -1 && (errno == ECONNABORTED || errno == EINTR));
@@ -373,28 +373,28 @@ try {
 	}
 
 	// Load in the vhost's key and certificates
-	if (SSL_CTX_use_PrivateKey(ssl_ctx, vhost->key) != 1) {
+	if (SSL_CTX_use_PrivateKey(ssl_ctx, vhost->key.get()) != 1) {
 		throw Openssl_error(ERR_get_error());
 	}
-	if (SSL_CTX_use_certificate(ssl_ctx, vhost->cert) != 1) {
+	if (SSL_CTX_use_certificate(ssl_ctx, vhost->cert.get()) != 1) {
 		throw Openssl_error(ERR_get_error());
 	}
-	for (std::vector<X509*>::iterator it(vhost->chain_certs.begin()); it != vhost->chain_certs.end(); ++it) {
-		if (SSL_CTX_add_extra_chain_cert(ssl_ctx, *it) != 1) {
+	for (auto&& chain_cert : vhost->chain_certs) {
+		if (SSL_CTX_add_extra_chain_cert(ssl_ctx, chain_cert.get()) != 1) {
 			throw Openssl_error(ERR_get_error());
 		}
 	}
 
 	// SSL Handshake
-	SSL*			ssl = SSL_new(ssl_ctx);
-	if (!SSL_set_fd(ssl, client_sock)) {
+	openssl_unique_ptr<SSL>		ssl(SSL_new(ssl_ctx));
+	if (!SSL_set_fd(ssl.get(), client_sock)) {
 		throw Openssl_error(ERR_get_error());
 	}
 	alarm(max_handshake_time);	// This is a very basic anti-DoS measure. Once the handshake is
 					// complete, we rely on the backend to handle timeouts.
 	int			accept_res;
-	if ((accept_res = SSL_accept(ssl)) != 1) {
-		int		err = SSL_get_error(ssl, accept_res);
+	if ((accept_res = SSL_accept(ssl.get())) != 1) {
+		int		err = SSL_get_error(ssl.get(), accept_res);
 		if (err == SSL_ERROR_SYSCALL) {
 			unsigned long	code = ERR_get_error();
 			if (code) {
@@ -459,11 +459,7 @@ try {
 	set_nonblocking(backend_sock, true);
 	set_nonblocking(client_sock, true);
 
-	proxy(client_sock, ssl, backend_sock);
-
-	SSL_free(ssl);
-	close(client_sock);
-	close(backend_sock);
+	proxy(client_sock, ssl.get(), backend_sock);
 
 	return 0;
 } catch (const System_error& error) {
