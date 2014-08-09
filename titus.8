@@ -42,23 +42,23 @@ with one option per line.
 .LP
 The following options are supported:
 .TP
-.BI \-\-config \ \fIfilename\fR
+.BI config \ \fIfilename\fR
 Load additional configuration options from \fIfilename\fR, where each line corresponds
 to one command line option, but with the leading '--' removed.  Blank lines and lines
 starting with '#' are ignored.
 
 Config files can recursively include other config files via the \fBconfig\fR option.
 .TP
-.BI \-\-daemon \ \fByes\fR\ |\ \fBno\fR
+.BI daemon \ \fByes\fR\ |\ \fBno\fR
 If set to "yes," daemonize after initialization is complete.  Defaults to "no."
 .TP
-.BI \-\-pid-file \ \fIfilename\fR
+.BI pid-file \ \fIfilename\fR
 After daemonizing, write PID to \fIfilename\fR.
 .TP
-.BI \-\-port \ \fIport\fR
+.BI port \ \fIport\fR
 Listen on the given TCP port.
 .TP
-.BI \-\-transparent \ \fByes\fR\ |\ \fBno\fR\ |\ \fBbackend-only\fR
+.BI transparent \ \fByes\fR\ |\ \fBno\fR\ |\ \fBbackend-only\fR
 (Linux only) Run \fBtitus\fR in transparent proxy mode.  In this mode, \fBtitus\fR preserves
 both the destination and source addresses when proxying connections, allowing your backend
 to see the client's actual IP address instead of the IP address of the \fBtitus\fR proxy.
@@ -66,59 +66,59 @@ This requires special configuration with iptables and advanced routing (see TRAN
 
 Specify \fBbackend-only\fR to use a transparent socket only when talking to the backend, and
 not when talking to the client.  This preserves the source address, but not the destination address, so
-you'll still need to specify the \fB--backend\fR and \fB--backend-port\fR options.
+you'll still need to specify the \fBbackend\fR and \fBbackend-port\fR options.
 .TP
-.BI \-\-backend \ \fIhost\fR
+.BI backend \ \fIhost\fR
 .TP
-.BI \-\-backend-port \ \fIport\fR
-Connect to the backend on the given \fIhost\fR and \fIport\fR.  Not applicable if \fB--transparent\fR is set to "yes"
+.BI backend-port \ \fIport\fR
+Connect to the backend on the given \fIhost\fR and \fIport\fR.  Not applicable if \fBtransparent\fR is set to "yes"
 (in which case the backend address is taken from the destination address of the TCP connection).
 .TP
-.BI \-\-min-spare-children \ \fInumber\fR
+.BI min-spare-children \ \fInumber\fR
 Keep at least \fInumber\fR child processes on standby ready to accept new connections.
 .TP
-.BI \-\-max-children \ \fInumber\fR
+.BI max-children \ \fInumber\fR
 Run at most \fInumber\fR child processes at a given time.  This is equivalent to the number of concurrent
 connections you can service at a time.
 .TP
-.BI \-\-max-handshake-time \ \fIseconds\fR
+.BI max-handshake-time \ \fIseconds\fR
 Terminate the connection if the TLS handshake takes longer than \fIseconds\fR seconds.
 .TP
-.BI \-\-network-user \ \fIusername\fR
+.BI network-user \ \fIusername\fR
 .TP
-.BI \-\-network-group \ \fIgroupname\fR
+.BI network-group \ \fIgroupname\fR
 Run the processes that talk to the network as the given user and group.  For best security, you
 should use a user account that is not used for any other purpose.
 .TP
-.BI \-\-keyserver-user \ \fIusername\fR
+.BI keyserver-user \ \fIusername\fR
 .TP
-.BI \-\-keyserver-group \ \fIgroupname\fR
+.BI keyserver-group \ \fIgroupname\fR
 Run the processes that perform private key operations as the given user and group.  For best security,
-you should use a different user account from \fB--network-user\fR.
+you should use a different user account from \fBnetwork-user\fR.
 .TP
-.BI \-\-chroot \ \fIpath\fR
+.BI chroot \ \fIpath\fR
 Run titus in the given chroot.  \fIpath\fR should be an empty directory that is not writable
 by any of the users that titus runs as.  This option only works if you start \fBtitus\fR as root.
 .TP
-.BI \-\-key \ \fIfilename\fR
+.BI key \ \fIfilename\fR
 Use the private key stored in \fIfilename\fR.
 .TP
-.BI \-\-cert \ \fIfilename\fR
+.BI cert \ \fIfilename\fR
 Use the certificate stored in \fIfilename\fR.  Intermediate certificate authority (aka chain) certificates
 should be placed in this file following your certificate.
 .TP
-.BI \-\-ciphers \ \fIlist\fR
+.BI ciphers \ \fIlist\fR
 Use the given OpenSSL cipher list.  See ciphers(1SSL) for a description of the syntax.
 .TP
-.BI \-\-honor-client-cipher-order \ \fByes\fR\ |\ \fBno\fR
-If set to "yes," the client dictates which cipher, among those listed in the \fB\-\-ciphers\fR option,
-is used.  If set to "no," earlier ciphers listed in the \fB\-\-ciphers\fR option are preferred.  Defaults to "no."
+.BI honor-client-cipher-order \ \fByes\fR\ |\ \fBno\fR
+If set to "yes," the client dictates which cipher, among those listed in the \fBciphers\fR option,
+is used.  If set to "no," earlier ciphers listed in the \fBciphers\fR option are preferred.  Defaults to "no."
 .TP
-.BI \-\-dhgroup \ \fIid\fR
+.BI dhgroup \ \fIid\fR
 Use the given Diffie-Hellman group (from RFC3526) for the Diffie-Hellman handshake.  Supported
 groups are "14" (2048 bits), "15" (3072 bits), and "16" (4096 bits).
 .TP
-.BI \-\-ecdhcurve \ \fIname\fR
+.BI ecdhcurve \ \fIname\fR
 Use the given curve for the Elliptic Curve Diffie-Hellman handshake.  The curve must be supported
 by OpenSSL (run 'openssl ecparam -list_curves' for a list) and be listed in Section 5.1.1 of RFC 4492.
 "prime256v1" is a good choice for most people.  Use "secp384r1" or "secp521r1" if you're paranoid.
@@ -126,31 +126,31 @@ by OpenSSL (run 'openssl ecparam -list_curves' for a list) and be listed in Sect
 Note: elliptic curve names are poorly standardized.  For instance, the curve called "prime256v1" by OpenSSL is listed
 as "secp256r1" in RFC 4492.
 .TP
-.BI \-\-compression \ \fByes\fR\ |\ \fBno\fR
+.BI compression \ \fByes\fR\ |\ \fBno\fR
 Enable/disable TLS compression, which is off by default.  Use extreme caution before enabling TLS
 compression, as it can enable side channel attacks such as CRIME.  Generally, TLS compression
 is safe only when an attacker cannot inject chosen plaintext into the connection.
 \fBNever enable TLS compression when proxying HTTPS\fR, since the browser security model makes
 it trivial to inject chosen plaintext.
 .TP
-.BI \-\-sslv3 \ \fByes\fR\ |\ \fBno\fR
+.BI sslv3 \ \fByes\fR\ |\ \fBno\fR
 Enable/disable support for SSLv3, which is off by default.  SSLv3 has some security problems.
 Unfortunately, some older clients (notably, IE6) do not support anything better.
 .TP
-.BI \-\-tlsv1 \ \fByes\fR\ |\ \fBno\fR
+.BI tlsv1 \ \fByes\fR\ |\ \fBno\fR
 Enable/disable support for TLSv1, which is on by default.  TLSv1 has
 security issues, though they are mostly mitigated in recent TLS
 implementations.  As of 2014, many clients still do not support anything
 better than TLSv1, so you should not disable it unless you
 do not need to support these clients.
 .TP
-.BI \-\-tlsv1.1 \ \fByes\fR\ |\ \fBno\fR
+.BI tlsv1.1 \ \fByes\fR\ |\ \fBno\fR
 Enable/disable support for TLSv1.1, which is on by default.
 .TP
-.BI \-\-tlsv1.2 \ \fByes\fR\ |\ \fBno\fR
+.BI tlsv1.2 \ \fByes\fR\ |\ \fBno\fR
 Enable/disable support for TLSv1.2, which is on by default.
 .SH "TRANSPARENT PROXY MODE"
-To be written.  For now, set "--transparent yes" and follow the instructions
+To be written.  For now, set "transparent yes" and follow the instructions
 at https://www.kernel.org/doc/Documentation/networking/tproxy.txt
 .SH "AUTHOR"
 .LP
