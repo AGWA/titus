@@ -448,18 +448,21 @@ namespace {
 	void read_config_file_vhost (Vhost& vhost, std::istream& config_in)
 	{
 		while (config_in.good() && config_in.peek() != -1) {
+			if (!std::isspace(config_in.peek()) && config_in.peek() != '#') {
+				// line does not start with whitespace (and isn't a comment) => end of vhost section
+				break;
+			}
+
+			// skip spaces and tabs
+			while (config_in.peek() == ' ' || config_in.peek() == '\t') {
+				config_in.get();
+			}
+
 			// Skip comments (lines starting with #) and blank lines
 			if (config_in.peek() == '#' || config_in.peek() == '\n') {
 				config_in.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 				continue;
 			}
-			if (config_in.peek() != ' ' && config_in.peek() != '\t') {
-				// line does not start with whitespace => end of vhost section
-				break;
-			}
-
-			// skip whitespace
-			config_in >> std::ws;
 
 			// read directive name
 			std::string		directive;
