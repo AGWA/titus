@@ -72,7 +72,8 @@ you'll still need to specify the \fBbackend\fR and \fBbackend-port\fR options.
 .TP
 .BI backend-port \ \fIport\fR
 Connect to the backend on the given \fIhost\fR and \fIport\fR.  Not applicable if \fBtransparent\fR is set to "yes"
-(in which case the backend address is taken from the destination address of the TCP connection).
+(in which case the backend address is taken from the destination address of the TCP connection).  These options cannot
+be specified if virtual hosts are used (see below).
 .TP
 .BI min-spare-children \ \fInumber\fR
 Keep at least \fInumber\fR child processes on standby ready to accept new connections.
@@ -101,11 +102,12 @@ Run titus in the given chroot.  \fIpath\fR should be an empty directory that is 
 by any of the users that titus runs as.  This option only works if you start \fBtitus\fR as root.
 .TP
 .BI key \ \fIfilename\fR
-Use the private key stored in \fIfilename\fR.
+Use the private key stored in \fIfilename\fR.  This option cannot be specified if virtual hosts are used (see below).
 .TP
 .BI cert \ \fIfilename\fR
 Use the certificate stored in \fIfilename\fR.  Intermediate certificate authority (aka chain) certificates
-should be placed in this file following your certificate.
+should be placed in this file following your certificate.  This option cannot be specified if virtual hosts
+are used (see below).
 .TP
 .BI ciphers \ \fIlist\fR
 Use the given OpenSSL cipher list.  See ciphers(1SSL) for a description of the syntax.
@@ -149,6 +151,56 @@ Enable/disable support for TLSv1.1, which is on by default.
 .TP
 .BI tlsv1.2 \ \fByes\fR\ |\ \fBno\fR
 Enable/disable support for TLSv1.2, which is on by default.
+.SH "VIRTUAL HOSTS"
+Virtual hosts let you configure different key, cert, and backend
+settings depending on the local address of the connection and the server
+name sent by the client (aka SNI).
+.LP
+A virtual host declaration begins with the single word "vhost" on a
+line by itself in the config file.  Options for that virtual host are
+specified on the following lines, as described above, prefixed by
+at least one whitespace character (tab or space).  The virtual host
+declaration continues until the first option that is not prefixed by a space.
+Virtual hosts cannot be specified by command line arguments.
+.LP
+The following options can be specified for a virtual host:
+.TP
+.BI local-address \ \fIhost\fR
+Use this virtual host if the local address of the connection matches
+\fIhost\fR.  If this option is omitted, the virtual host matches any
+local address.
+.TP
+.BI local-port \ \fIport\fR
+Use this virtual host if the local port number of the connection matches
+\fIport\fR.  If this option is omitted, the virtual host matches any
+local port.
+.TP
+.BI sni-name \ \fIname\fR
+Use this virtual host if the TLS server name (aka SNI) sent by the client matches \fIname\fR.
+To match a client that does not send a server name (such as an older web browser), specify a literal
+\fB""\fR for \fIname\fR.  If this option is omitted, the virtual host matches any server name.
+.TP
+.BI key \ \fIfilename\fR
+Use the private key stored in \fIfilename\fR.
+.TP
+.BI cert \ \fIfilename\fR
+Use the certificate stored in \fIfilename\fR.  Intermediate certificate authority (aka chain) certificates
+should be placed in this file following your certificate.
+.TP
+.BI backend \ \fIhost\fR
+.TP
+.BI backend-port \ \fIport\fR
+Connect to the backend on the given \fIhost\fR and \fIport\fR.  Not applicable if \fBtransparent\fR is set to "yes"
+(in which case the backend address is taken from the destination address of the TCP connection).
+.LP
+Virtual hosts are consulted in the order they are specified in the configuration file, and the first matching
+virtual host (as determined by the \fBlocal-address\fR, \fBlocal-port\fR, and \fBsni-name\fR options) is
+used.  If no virtual host matches, the connection is dropped.  If this is undesirable, you can specify a virtual host
+at the end of your config that matches any local address and SNI name.
+.LP
+If no virtual hosts are declared, the \fBkey\fR, \fBcert\fR, \fBbackend\fR, etc. options from the main part
+of the configuration (outside of any virtual host declaration) are used.  If virtual hosts are declared,
+these options cannot be specified outside of a virtual host declaration.
 .SH "TRANSPARENT PROXY MODE"
 To be written.  For now, set "transparent yes" and follow the instructions
 at https://www.kernel.org/doc/Documentation/networking/tproxy.txt

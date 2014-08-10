@@ -8,10 +8,6 @@ port			443
 # Run in transparent proxy mode (see titus(8) man page)?
 #transparent		no
 
-# Address of backend application
-backend			127.0.0.1
-backend-port		8443
-
 # Minimum number of children to keep running waiting for connections
 #min-spare-children	3
 
@@ -32,9 +28,41 @@ keyserver-group		nogroup
 # Directory to chroot to (this should be empty and not writable by the titus user)
 chroot			/var/lib/titus/empty
 
-# TLS key and certificate
-key			/etc/ssl/private/www.example.com.key
-cert			/etc/ssl/certs/www.example.com.chained.crt
+# Virtual host that matches any connection to 192.0.2.5
+vhost
+	# Local address of connection (if not specified, any local address matches)
+	local-address	192.0.2.5
+
+	# TLS key and certificate for this vhost
+	key		/etc/ssl/private/example.com.key
+	cert		/etc/ssl/certs/example.com.chained.crt
+
+	# Address of backend application
+	backend		127.0.0.1
+	backend-port	6443
+
+# Virtual host that matches a server name of www.example.com
+vhost
+	# Server name (SNI) (if not specified, any server name matches)
+	sni-name	www.example.com
+
+	# TLS key and certificate for this vhost
+	key		/etc/ssl/private/www.example.com.key
+	cert		/etc/ssl/certs/www.example.com.chained.crt
+
+	# Address of backend application
+	backend		127.0.0.1
+	backend-port	7443
+
+# Virtual host that matches any connection
+vhost
+	# TLS key and certificate for this vhost
+	key		/etc/ssl/private/wildcard.example.com.key
+	cert		/etc/ssl/certs/wildcard.example.com.chained.crt
+
+	# Address of backend application
+	backend		127.0.0.1
+	backend-port	8443
 
 # TLS settings (see titus(8) man page)
 #ciphers		ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:DHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA:DHE-RSA-CAMELLIA256-SHA:AES256-GCM-SHA384:AES256-SHA256:AES256-SHA:CAMELLIA256-SHA:ECDHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-RSA-CAMELLIA128-SHA:AES128-GCM-SHA256:AES128-SHA256:AES128-SHA:CAMELLIA128-SHA:ECDHE-RSA-RC4-SHA:RC4-SHA
