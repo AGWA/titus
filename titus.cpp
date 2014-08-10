@@ -220,6 +220,9 @@ namespace {
 	int ssl_servername_cb (SSL* ssl, int*, void*)
 	{
 		const char*	servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+		if (!servername) {
+			servername = "";
+		}
 		for (Vhost& vhost : vhosts) {
 			if (vhost.matches_servername(servername)) {
 				SSL_set_SSL_CTX(ssl, vhost.ssl_ctx.get());
@@ -227,7 +230,7 @@ namespace {
 				return SSL_TLSEXT_ERR_OK;
 			}
 		}
-		std::clog << "No matching vhost for SNI name '" << (servername ? servername : "") << "'" << std::endl;
+		std::clog << "No matching vhost for SNI name '" << servername << "'" << std::endl;
 		return SSL_TLSEXT_ERR_ALERT_FATAL;
 	}
 
@@ -355,9 +358,13 @@ namespace {
 		} else if (key == "local-port") {
 			vhost.local_address_port = value;
 		} else if (key == "sni-name") {
-			vhost.servername = value;
-		} else if (key == "sni-fallback") {
-			vhost.match_null_servername = parse_config_bool(value);
+			vhost.servername_set = true;
+			if (value == "\"\"") { // ""
+				// treat "" as the empty server name
+				vhost.servername = "";
+			} else {
+				vhost.servername = value;
+			}
 		} else {
 			throw Configuration_error("Unknown vhost parameter `" + key + "'");
 		}

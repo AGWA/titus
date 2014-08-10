@@ -48,8 +48,8 @@ struct Vhost {
 	std::string				backend_address_string;
 	std::string				backend_address_port;
 	struct sockaddr_in6			backend_address;
+	bool					servername_set = false;
 	std::string				servername;
-	bool					match_null_servername = false; // vhost matches if no server name provided by client
 	std::string				key_filename;
 	std::string				cert_filename;
 	openssl_unique_ptr<SSL_CTX>		ssl_ctx;
@@ -62,7 +62,7 @@ struct Vhost {
 
 	bool matches_servername (const char* arg_servername) const
 	{
-		return servername.empty() || (arg_servername ? servername == arg_servername : match_null_servername);
+		return !servername_set || servername == arg_servername;
 	}
 };
 
