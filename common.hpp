@@ -41,7 +41,7 @@
 typedef uintptr_t Vhost_id;
 
 struct Vhost {
-	Vhost_id				id{};
+	Vhost_id				id = 0;
 	std::string				local_address_string;
 	std::string				local_address_port;
 	struct sockaddr_in6			local_address;
