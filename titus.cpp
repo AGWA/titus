@@ -559,6 +559,10 @@ try {
 	}
 
 	if (has_default_vhost) {
+		if (!vhosts.empty()) {
+			throw Configuration_error("backend, backend-port, key, and cert cannot be specified outside of a virtual host if virtual hosts are declared");
+		}
+
 		vhosts.push_back(std::move(default_vhost));
 	}
 	for (size_t i = 0; i < vhosts.size(); ++i) {
