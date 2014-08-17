@@ -30,16 +30,40 @@
 
 #include "util.hpp"
 #include <string>
+#include <vector>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <openssl/ssl.h>
 #include <openssl/rsa.h>
 #include <netinet/ip.h>
 
+typedef uintptr_t Vhost_id;
+
+struct Vhost {
+	Vhost_id				id = 0;
+	struct sockaddr_in6			local_address;
+	struct sockaddr_in6			backend_address;
+	bool					servername_set = false;
+	std::string				servername;
+	std::string				key_filename;
+	openssl_unique_ptr<SSL_CTX>		ssl_ctx;
+
+	Vhost ()
+	{
+		std::memset(&local_address, 0, sizeof(local_address));
+		std::memset(&backend_address, 0, sizeof(backend_address));
+	}
+
+	bool matches_servername (const char* arg_servername) const
+	{
+		return !servername_set || servername == arg_servername;
+	}
+};
+
 // Config:
-extern std::string		cert_filename;
-extern std::string		key_filename;
+extern std::vector<Vhost>	vhosts;			// sorted in order of vhost ID, starting from 0, strictly increasing
 extern Transparency		transparent;
-extern struct sockaddr_in6	backend_address;
 extern unsigned int		max_handshake_time;	// TLS handshake must complete within this # of seconds
 extern std::string		chroot_directory;	// empty to not chroot
 extern uid_t			drop_uid_network;	// UID for process that talks to network (-1 to not change)
@@ -50,17 +74,8 @@ extern gid_t			drop_gid_keyserver;	// GID for key server process (-1 to not chan
 // State:
 extern int			listening_sock;
 extern int			children_pipe[2];		// Used by children to tell us when they accept a connection
-
-// OpenSSL state:
-extern SSL_CTX*			ssl_ctx;
-
-inline void ssl_ctx_set_option (long option, bool state)
-{
-	if (state) {
-		SSL_CTX_set_options(ssl_ctx, option);
-	} else {
-		SSL_CTX_clear_options(ssl_ctx, option);
-	}
-}
+extern struct sockaddr_un	keyserver_sockaddr;
+extern socklen_t		keyserver_sockaddr_len;
+extern Vhost*			active_vhost;
 
 #endif

@@ -29,7 +29,10 @@
 #define RSA_SERVER_HPP
 
 #include <openssl/rsa.h>
+#include <vector>
+#include "filedesc.hpp"
+#include "util.hpp"
 
-void		run_rsa_server (RSA*, int sock);
+void		run_rsa_server (std::vector<openssl_unique_ptr<RSA>>, filedesc sock);
 
 #endif

@@ -1,16 +1,17 @@
 CXX = c++
 CXXFLAGS ?= -Wall -Wextra -pedantic -O2
+CXXFLAGS += -std=c++11
 LDFLAGS += -lcrypto -lssl
 PREFIX = /usr/local
 
 PROGRAMS = titus
 MANPAGES = titus.8
-OBJFILES = child.o common.o util.o dh.o rsa_client.o rsa_server.o titus.o
+OBJFILES = child.o common.o util.o dh.o keyserver.o rsa_client.o rsa_server.o titus.o
 
 all: $(PROGRAMS)
 
 titus: $(OBJFILES)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) $(LIBMILTER_LDFLAGS)
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJFILES) $(LDFLAGS)
 
 clean:
 	rm -f *.o $(PROGRAMS)

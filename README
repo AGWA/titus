@@ -34,27 +34,29 @@ handy if your backend's built-in TLS support is lacking.
 
 CURRENT STATUS
 
-The current version of titus is 0.1, released on 2014-05-04.  titus aims
+The current version of titus is 0.2, released on 2014-08-17.  titus aims
 to be bug-free and secure, though it has not yet undergone serious
 testing or performance optimization.  Additionally, we may make
 backwards-incompatible changes to the behavior before titus reaches
 version 1.0
 
 
+NON-LINUX WARNING
+
+On non-Linux systems, due to the lack of the prctl() syscall, titus
+cannot prevent ptracing of one titus process by another titus process.
+This substantially reduces the isolation between TLS connections.
+A future version of titus will provide full isolation even on non-Linux
+systems.
+
+
 INSTALLING TITUS
 
+If you use Debian or Ubuntu, see https://www.opsmate.com/titus/#getting
+for information about installing the titus .deb package.  Using the .deb
+package is highly recommended since it comes with a handy init script.
+
 To build from source, see the BUILDING file.
-
-Alternatively, install the Debian package, which should work on Debian
-Wheezy and Ubuntu 12.04-14.04:
-
- * amd64: https://www.agwa.name/projects/titus/downloads/titus_0.1-1_amd64.deb
- * i386:  https://www.agwa.name/projects/titus/downloads/titus_0.1-1_i386.deb
-
-Using the Debian package is highly recommended since it comes with a
-handy init script.
-
-An APT repo is in the works.
 
 
 CONFIGURING TITUS
@@ -77,7 +79,7 @@ titus like any other service.
 
 PROJECT RESOURCES
 
-Home page:	https://agwa.name/projects/titus
+Home page:	https://www.opsmate.com/titus
 Git repository:	https://agwa.name/git/titus.git
 		https://github.com/AGWA/titus.git (mirror)
 GitHub project:	https://github.com/AGWA/titus

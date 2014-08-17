@@ -25,17 +25,31 @@
  * authorization.
  */
 
+// TODO: do this via a configure script:
+#ifdef __linux__
+#define HAS_PRCTL 1
+#define HAS_IP_TRANSPARENT 1
+#endif
+
 #include "util.hpp"
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/resource.h>
+#ifdef HAS_PRCTL
 #include <sys/prctl.h>
+#endif
 #include <netdb.h>
 #include <pwd.h>
 #include <grp.h>
 #include <netinet/ip.h>
+
+// TODO: do this via a configure script:
+#if defined(__linux__) || defined(RLIMIT_NPROC)
+#define HAS_RLIMIT_NPROC
+#endif
 
 void set_nonblocking (int fd, bool nonblocking)
 {
@@ -56,10 +70,14 @@ void set_nonblocking (int fd, bool nonblocking)
 
 void set_transparent (int sock_fd)
 {
+#ifdef HAS_IP_TRANSPARENT
 	int transparent = 1;
 	if (setsockopt(sock_fd, IPPROTO_IP, IP_TRANSPARENT, &transparent, sizeof(transparent)) == -1) {
 		throw System_error("setsockopt(IP_TRANSPARENT)", "", errno);
 	}
+#else
+	throw System_error("setsockopt(IP_TRANSPARENT)", "", ENOSYS);
+#endif
 }
 
 void set_not_v6only (int sock_fd)
@@ -67,6 +85,14 @@ void set_not_v6only (int sock_fd)
 	int v6only = 0;
 	if (setsockopt(sock_fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) == -1) {
 		throw System_error("setsockopt(IPV6_V6ONLY)", "", errno);
+	}
+}
+
+void set_reuseaddr (int sock_fd)
+{
+	int reuseaddr = 1;
+	if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof(reuseaddr)) == -1) {
+		throw System_error("setsockopt(SO_REUSEADDR)", "", errno);
 	}
 }
 
@@ -83,6 +109,15 @@ void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t
 		}
 	}
 
+#ifdef HAS_PRCTL
+	// Prevent this process from being ptraced, so other children running as this UID can't
+	// attack us.  Ultimately we should use a dedicated UID for every child process for even
+	// better isolation.
+	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
+		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
+	}
+#endif
+
 	// Drop privileges.
 	if (drop_gid != static_cast<gid_t>(-1) && setgid(drop_gid) == -1) {
 		throw System_error("setgid", "", errno);
@@ -94,11 +129,21 @@ void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t
 		throw System_error("setuid", "", errno);
 	}
 
-	// Prevent this process from being ptraced, so other children running as this UID can't
-	// attack us.  Ultimately we should use a dedicated UID for every child process for even
-	// better isolation.
-	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
-		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
+#ifdef HAS_RLIMIT_NPROC
+	// Prevent this process from forking by setting RLIMIT_NPROC to 0
+	struct rlimit		rlim = { 0, 0 };
+	if (setrlimit(RLIMIT_NPROC, &rlim) == -1) {
+		throw System_error("setrlimit(RLIMIT_NPROC)", "", errno);
+	}
+#endif
+}
+
+void	restrict_file_descriptors ()
+{
+	// Prevent this process from creating new file descriptors by setting RLIMIT_NOFILE to 0
+	struct rlimit		rlim = { 0, 0 };
+	if (setrlimit(RLIMIT_NOFILE, &rlim) == -1) {
+		throw System_error("setrlimit(RLIMIT_NOFILE)", "", errno);
 	}
 }
 
@@ -159,7 +204,7 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 	hints.ai_protocol = 0;
 
 	struct addrinfo*	addrs;
-	int			res = getaddrinfo(host.empty() ? NULL : host.c_str(), port.c_str(), &hints, &addrs);
+	int			res = getaddrinfo(host.empty() ? NULL : host.c_str(), port.empty() ? NULL : port.c_str(), &hints, &addrs);
 	if (res != 0) {
 		throw Configuration_error("Unable to resolve [" + host + "]:" + port + " - " + gai_strerror(res));
 	}
@@ -167,7 +212,13 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 		freeaddrinfo(addrs);
 		throw Configuration_error("[" + host + "]:" + port + " resolves to more than one address");
 	}
-	std::memcpy(address, addrs->ai_addr, addrs->ai_addrlen);
+	std::memcpy(address, addrs->ai_addr, sizeof(*address));
+	if (host.empty()) {
+		std::memcpy(&address->sin6_addr, &in6addr_any, sizeof(in6_addr));
+	}
+	if (port.empty()) {
+		address->sin6_port = htons(0);
+	}
 	freeaddrinfo(addrs);
 }
 
@@ -191,3 +242,51 @@ gid_t resolve_group (const std::string& group)
 	return grp->gr_gid;
 }
 
+filedesc make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen_t* addr_len)
+{
+	if (path.size() + 1 >= sizeof(addr->sun_path)) {
+		throw System_error("make_unix_socket", path, ENAMETOOLONG);
+	}
+	unlink(path.c_str());
+
+	addr->sun_family = AF_UNIX;
+	std::strcpy(addr->sun_path, path.c_str());
+	*addr_len = sizeof(addr->sun_family) + path.size();
+	filedesc sock;
+	if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+		throw System_error("socket(AF_UNIX)", "", errno);
+	}
+	if (bind(sock, reinterpret_cast<struct sockaddr*>(addr), *addr_len) == -1) {
+		throw System_error("bind", addr->sun_path, errno);
+	}
+	return sock;
+}
+
+filedesc make_unix_socket (const std::string& path)
+{
+	struct sockaddr_un addr;
+	socklen_t addr_len;
+	return make_unix_socket(path, &addr, &addr_len);
+}
+
+std::string make_temp_directory ()
+{
+	char		path[64];
+	std::strcpy(path, "/tmp/titus.XXXXXX");
+	if (!mkdtemp(path)) {
+		throw System_error("mkdtemp", path, errno);
+	}
+	return path;
+}
+
+void set_ssl_options (SSL_CTX* ctx, const std::map<long, bool>& options)
+{
+	for (auto it(options.begin()); it != options.end(); ++it) {
+		if (it->second) {
+			SSL_CTX_set_options(ctx, it->first);
+		} else {
+			SSL_CTX_clear_options(ctx, it->first);
+		}
+	}
+
+}

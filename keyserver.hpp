@@ -25,24 +25,12 @@
  * authorization.
  */
 
-#ifndef DH_HPP
-#define DH_HPP
+#ifndef KEYSERVER_HPP
+#define KEYSERVER_HPP
 
-#include <openssl/dh.h>
+#include <openssl/rsa.h>
 #include "util.hpp"
 
-extern const unsigned char dh_group14_prime[256];
-extern const unsigned char dh_group14_generator[1];
-extern const unsigned char dh_group15_prime[384];
-extern const unsigned char dh_group15_generator[1];
-extern const unsigned char dh_group16_prime[512];
-extern const unsigned char dh_group16_generator[1];
-
-openssl_unique_ptr<DH> make_dh (const unsigned char* prime, size_t prime_len, const unsigned char* generator, size_t generator_len);
-
-template<size_t prime_len, size_t generator_len> openssl_unique_ptr<DH> make_dh (const unsigned char (&prime)[prime_len], const unsigned char (&generator)[generator_len])
-{
-	return make_dh(prime, prime_len, generator, generator_len);
-}
+int	keyserver_main (filedesc arg_keyserver_sock);
 
 #endif

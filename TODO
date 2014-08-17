@@ -1,7 +1,7 @@
 Features:
 	Near-term:
 		[DONE] Non-transparent operation
-		SNI support
+		[DONE] SNI support
 		Reasonable default options for: dhgroup, ecdhcurve, and ciphers
 		More DH groups
 		[DONE] Stop spawning children if spare children are constantly failing
@@ -9,23 +9,45 @@ Features:
 			[DONE] ping it from child to make sure it started OK
 			[DONE] if it terminates, terminate the child too with an error
 		[DONE] Enforce max handshake time
+		dynamic UIDs
+		configurable socket directory, so packagers can put it somewhere more stable (e.g. /run on Debian)
+		avoid use of named UNIX domain socket (see notes)
+		use a deleted temporary directory for the root, instead of requiring it to be specified by chroot option
 
 	Medium-term:
-		Flexible configuration of backend address: route different SNIs/local addresses to different backends
-			List of local addresses (:: for all) mapped to list of:
+		[maybe] Better 1:1 connection mapping + DoS protection:
+			Initiate connection to backend before starting TLS handshake, and
+			if backend cuts us off, abort the TLS handshake.  This makes connections
+			more 1:1 and puts the backend truly in control of per-client limits.
+			[note: this makes it impossible to route different SNI names to different backend addresses]
+		[DONE] Vhost support:
+			Route different SNIs/local addresses to different backends, use different certs
+			vhost selector:
+				local address (host + port)
 				SNI name
+			mapped to:
 				Key + cert
-				Backend address (:: for same as local address in transparent mode)
-		Support listening on specific addresses
+				Backend address (host + port)
+					should be possible to use same as local address
+			first vhost selector to match is used
+		[maybe] more efficient key server ... it seems wasteful to start so many key servers that sit idle most of the time
+		Support listening on specific address
+		Support listening on multiple specific addresses
+			work in progress on multiple_listen branch
+			problem: listening on more than 1 address means we have to select or poll all listening sockets in all children, and they ALL get worken up when a connection comes in, which is inefficient... see commit message on multiple_listen branch
 		Logging (syslog probably)
 		Better reporting of errors that happen in children, esp configuration errors
 		Support custom DH params
 		Better handle SSL shutdown edge cases
+		set resource limits to prevent DoS by memory exhaustion
+		support for EC keys
+		improve documentation
 	
 	Long-term:
-		dynamic UIDs
-			with cgroups so we can kill them off
+		execve
 		seccomp filter
+		no_new_privs
+		namespaces: network, sysvipc, PID
 
 Meta:
 	Document transparent mode
@@ -38,7 +60,7 @@ Meta:
 	[DONE] Mailing lists
 
 Internal improvements:
-	Switch to C++11
-	Use RAII more extensively to avoid leaks (though leaks currently only happen if there's an error, and we terminate on error anyways)
+	[DONE] Switch to C++11
+	[MOSTLY DONE] Use RAII more extensively to avoid leaks (though leaks currently only happen if there's an error, and we terminate on error anyways)
 	Use structs/classes instead of global variables
 	Use enum for key server commands

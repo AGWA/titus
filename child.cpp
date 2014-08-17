@@ -29,7 +29,6 @@
 #include "common.hpp"
 #include "util.hpp"
 #include "rsa_client.hpp"
-#include "rsa_server.hpp"
 #include <errno.h>
 #include <cstring>
 #include <cstdio>
@@ -37,8 +36,7 @@
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/prctl.h>
-#include <sys/poll.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/ip.h>
 #include <grp.h>
@@ -57,23 +55,6 @@ namespace {
 		sigset_t empty_sigset;
 		sigemptyset(&empty_sigset);
 		sigprocmask(SIG_SETMASK, &empty_sigset, NULL);
-	}
-
-	void sigchld_handler (int)
-	{
-		// This will happen if the RSA server process (which is a child of the child proecss)
-		// terminates prematurely.  Usually, the RSA server process terminates only when it
-		// detects that its parent (the "child" process) has terminated.
-		_exit(8);
-	}
-
-	void install_sigchld_handler ()
-	{
-		struct sigaction		siginfo;
-		sigemptyset(&siginfo.sa_mask);
-		siginfo.sa_flags = 0;
-		siginfo.sa_handler = sigchld_handler;
-		sigaction(SIGCHLD, &siginfo, NULL);
 	}
 
 	class Pump {
@@ -233,9 +214,10 @@ namespace {
 
 		void operator() ()
 		{
-			struct pollfd	fds[2];
-			fds[0].fd = client_sock;
-			fds[1].fd = backend_sock;
+			fd_set		rfds;
+			fd_set		wfds;
+			FD_ZERO(&rfds);
+			FD_ZERO(&wfds);
 
 			while (true) {
 				Result	client_read_result = pump_client_reads();
@@ -250,32 +232,43 @@ namespace {
 						backend_write_result != pump_successful) {
 
 					// No forward progress was made at all -> poll() until we can make progress
-					fds[0].events = 0;
-					fds[1].events = 0;
+					int		max_fd = -1;
 					if (client_read_result == pump_read_blocked ||
 							client_write_result == pump_read_blocked) {
-						fds[0].events |= POLLIN;
+						FD_SET(client_sock, &rfds);
+						max_fd = std::max(max_fd, client_sock);
+					} else {
+						FD_CLR(client_sock, &rfds);
 					}
 					if (backend_read_result == pump_read_blocked ||
 							backend_write_result == pump_read_blocked) {
-						fds[1].events |= POLLIN;
+						FD_SET(backend_sock, &rfds);
+						max_fd = std::max(max_fd, backend_sock);
+					} else {
+						FD_CLR(backend_sock, &rfds);
 					}
 					if (client_read_result == pump_write_blocked ||
 							client_write_result == pump_write_blocked) {
-						fds[0].events |= POLLOUT;
+						FD_SET(client_sock, &wfds);
+						max_fd = std::max(max_fd, client_sock);
+					} else {
+						FD_CLR(client_sock, &wfds);
 					}
 					if (backend_read_result == pump_write_blocked ||
 							backend_write_result == pump_write_blocked) {
-						fds[1].events |= POLLOUT;
+						FD_SET(backend_sock, &wfds);
+						max_fd = std::max(max_fd, backend_sock);
+					} else {
+						FD_CLR(backend_sock, &wfds);
 					}
 
-					if (fds[0].events == 0 && fds[1].events == 0) {
+					if (max_fd == -1) {
 						// This'll happen when the connection winds down cleanly
 						break;
 					}
 
-					if (poll(fds, 2, -1) == -1) {
-						throw System_error("poll", "", errno);
+					if (select(max_fd + 1, &rfds, &wfds, NULL, NULL) == -1) {
+						throw System_error("select", "", errno);
 					}
 				}
 			}
@@ -288,49 +281,6 @@ namespace {
 	{
 		Pump pump(client_sock, client_ssl, backend_sock);
 		pump();
-	}
-
-	int rsa_server_main (int sock)
-	try {
-		// reseed OpenSSL RNG b/c we just forked
-		if (RAND_poll() != 1) {
-			throw Openssl_error(ERR_get_error());
-		}
-
-		// Load private key file
-		std::FILE*	fp = std::fopen(key_filename.c_str(), "r");
-		if (!fp) {
-			throw System_error("fopen", key_filename, errno);
-		}
-
-		RSA*		rsa = PEM_read_RSAPrivateKey(fp, NULL, NULL, NULL);
-		if (!rsa) {
-			unsigned long	code = ERR_get_error();
-			std::fclose(fp);
-			throw Openssl_error(code);
-		}
-
-		std::fclose(fp);
-
-		// Drop privileges
-		drop_privileges(chroot_directory, drop_uid_keyserver, drop_gid_keyserver);
-
-		// Read and respond to RSA operations
-		run_rsa_server(rsa, sock);
-		return 0;
-	} catch (const System_error& error) {
-		std::clog << "System error in RSA server: " << error.syscall;
-		if (!error.target.empty()) {
-			std::clog << ": " << error.target;
-		}
-		std::clog << ": " << std::strerror(errno) << std::endl;
-		return 3;
-	} catch (const Openssl_error& error) {
-		std::clog << "OpenSSL error in RSA server: " << error.message() << std::endl;
-		return 4;
-	} catch (const Key_protocol_error& error) {
-		std::clog << "Key protocol error in RSA server: " << error.message << std::endl;
-		return 6;
 	}
 }
 
@@ -350,40 +300,21 @@ try {
 
 	close(children_pipe[0]);
 
-	// Fire up the RSA server.  Do this while we're still privileged (so we can read the
-	// private key file), and before we start talking to the network (which is risky).
-	int			rsa_server_sockpair[2];
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, rsa_server_sockpair) == -1) {
-		throw System_error("socketpair", "", errno);
+	// Connect to the key server over a UNIX domain socket. Do this while we're still
+	// privileged since it requires accessing the filesystem.
+	filedesc		keyserver_client_sock;
+	if ((keyserver_client_sock = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+		throw System_error("socket(AF_UNIX)", "", errno);
+	}
+	if (connect(keyserver_client_sock, reinterpret_cast<struct sockaddr*>(&keyserver_sockaddr), keyserver_sockaddr_len) == -1) {
+		throw System_error("connect", keyserver_sockaddr.sun_path, errno);
 	}
 
-	pid_t			rsa_server_pid = fork();
-	if (rsa_server_pid == -1) {
-		throw System_error("fork", "", errno);
-	}
-	if (rsa_server_pid == 0) {
-		try {
-			close(listening_sock);
-			close(children_pipe[1]);
-			close(rsa_server_sockpair[0]);
-			_exit(rsa_server_main(rsa_server_sockpair[1]));
-		} catch (...) {
-			std::terminate();
-		}
-	}
-	close(rsa_server_sockpair[1]);
-	rsa_client_set_socket(rsa_server_sockpair[0]);
-
-	// Ping the RSA server to make sure it successfully started.  It might fail
-	// to start if the RSA key file was bad.
-	rsa_client_ping();
-
-	// if the RSA server terminates, terminate this process too:
-	install_sigchld_handler();
+	rsa_client_set_socket(std::move(keyserver_client_sock));
 
 	// Create the backend socket.  Since setting transparency requires privilege,
 	// we do it while we're still root.
-	int			backend_sock = socket(AF_INET6, SOCK_STREAM, 0);
+	filedesc		backend_sock(socket(AF_INET6, SOCK_STREAM, 0));
 	if (backend_sock == -1) {
 		throw System_error("socket", "", errno);
 	}
@@ -396,7 +327,7 @@ try {
 	drop_privileges(chroot_directory, drop_uid_network, drop_gid_network);
 
 	// Accept client connection.
-	int			client_sock;
+	filedesc		client_sock;
 	struct sockaddr_in6	client_address;
 	socklen_t		client_address_len = sizeof(client_address);
 	while ((client_sock = accept(listening_sock, reinterpret_cast<struct sockaddr*>(&client_address), &client_address_len)) == -1 && (errno == ECONNABORTED || errno == EINTR));
@@ -414,16 +345,47 @@ try {
 	}
 	close(children_pipe[1]);
 
+	// Prevent the creation of new file descriptors.
+	restrict_file_descriptors();
+
+	// Find a matching vhost based on the socket's local address
+	struct sockaddr_in6	local_address;
+	socklen_t		local_address_len = sizeof(local_address);
+	if (getsockname(client_sock, reinterpret_cast<struct sockaddr*>(&local_address), &local_address_len) == -1) {
+		throw System_error("getsockname", "", errno);
+	}
+
+	// Filter out vhosts that don't match
+	std::vector<Vhost>	candidate_vhosts;
+	for (auto&& vhost : vhosts) {
+		if (std::memcmp(&vhost.local_address.sin6_addr, &in6addr_any, sizeof(in6_addr)) != 0 &&
+				std::memcmp(&vhost.local_address.sin6_addr, &local_address.sin6_addr, sizeof(in6_addr)) != 0) {
+			continue;
+		}
+		if (vhost.local_address.sin6_port != 0 && vhost.local_address.sin6_port != local_address.sin6_port) {
+			continue;
+		}
+		candidate_vhosts.push_back(std::move(vhost));
+	}
+	vhosts = std::move(candidate_vhosts);
+
+	if (vhosts.empty()) {
+		std::clog << "No mathing vhost." << std::endl;
+		return 7;
+	}
+
+	active_vhost = &vhosts[0];
+
 	// SSL Handshake
-	SSL*			ssl = SSL_new(ssl_ctx);
-	if (!SSL_set_fd(ssl, client_sock)) {
+	openssl_unique_ptr<SSL>		ssl(SSL_new(active_vhost->ssl_ctx.get()));
+	if (!SSL_set_fd(ssl.get(), client_sock)) {
 		throw Openssl_error(ERR_get_error());
 	}
 	alarm(max_handshake_time);	// This is a very basic anti-DoS measure. Once the handshake is
 					// complete, we rely on the backend to handle timeouts.
 	int			accept_res;
-	if ((accept_res = SSL_accept(ssl)) != 1) {
-		int		err = SSL_get_error(ssl, accept_res);
+	if ((accept_res = SSL_accept(ssl.get())) != 1) {
+		int		err = SSL_get_error(ssl.get(), accept_res);
 		if (err == SSL_ERROR_SYSCALL) {
 			unsigned long	code = ERR_get_error();
 			if (code) {
@@ -446,7 +408,18 @@ try {
 	if (transparent != TRANSPARENT_OFF) {
 		// Impersonate the client when talking to the backend.
 		if (bind(backend_sock, reinterpret_cast<const struct sockaddr*>(&client_address), client_address_len) == -1) {
-			throw System_error("bind", "", errno);
+			if (errno != EADDRINUSE) {
+				throw System_error("bind", "", errno);
+			}
+
+			// If we get EADDRINUSE it means the client is local so there is no way
+			// to impersonate the port number.  Zero out the port number so one is
+			// assigned dynamically.  (Unfortunately the backend won't see the true source port
+			// number, but backends generally only care about source IP address.)
+			client_address.sin6_port = 0;
+			if (bind(backend_sock, reinterpret_cast<const struct sockaddr*>(&client_address), client_address_len) == -1) {
+				throw System_error("bind", "", errno);
+			}
 		}
 	}
 
@@ -463,18 +436,13 @@ try {
 			throw System_error("connect", "", errno);
 		}
 	} else {
-		if (std::memcmp(&backend_address.sin6_addr, &in6addr_any, sizeof(struct in6_addr)) == 0) {
+		if (std::memcmp(&active_vhost->backend_address.sin6_addr, &in6addr_any, sizeof(struct in6_addr)) == 0) {
 			// Backend IP address not specified, so use the local address of the client socket
-			struct sockaddr_in6	local_address;
-			socklen_t		local_address_len = sizeof(local_address);
-			if (getsockname(client_sock, reinterpret_cast<struct sockaddr*>(&local_address), &local_address_len) == -1) {
-				throw System_error("getsockname", "", errno);
-			}
-			std::memcpy(&backend_address.sin6_addr, &local_address.sin6_addr, sizeof(struct in6_addr));
+			std::memcpy(&active_vhost->backend_address.sin6_addr, &local_address.sin6_addr, sizeof(struct in6_addr));
 		}
 
-		socklen_t		backend_address_len = sizeof(backend_address);
-		if (connect(backend_sock, reinterpret_cast<const struct sockaddr*>(&backend_address), backend_address_len) == -1) {
+		socklen_t		backend_address_len = sizeof(active_vhost->backend_address);
+		if (connect(backend_sock, reinterpret_cast<const struct sockaddr*>(&active_vhost->backend_address), backend_address_len) == -1) {
 			throw System_error("connect", "", errno);
 		}
 	}
@@ -482,11 +450,7 @@ try {
 	set_nonblocking(backend_sock, true);
 	set_nonblocking(client_sock, true);
 
-	proxy(client_sock, ssl, backend_sock);
-
-	SSL_free(ssl);
-	close(client_sock);
-	close(backend_sock);
+	proxy(client_sock, ssl.get(), backend_sock);
 
 	return 0;
 } catch (const System_error& error) {
@@ -494,7 +458,7 @@ try {
 	if (!error.target.empty()) {
 		std::clog << ": " << error.target;
 	}
-	std::clog << ": " << std::strerror(errno) << std::endl;
+	std::clog << ": " << std::strerror(error.number) << std::endl;
 	return 3;
 } catch (const Openssl_error& error) {
 	std::clog << "OpenSSL error in child: " << error.message() << std::endl;

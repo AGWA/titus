@@ -31,9 +31,9 @@
 #include <openssl/rsa.h>
 #include <openssl/evp.h>
 #include <stdint.h>
+#include "util.hpp"
 
-EVP_PKEY*	rsa_client_load_private_key (uintptr_t key_id, RSA* public_rsa);
-void		rsa_client_set_socket (int fd);
-void		rsa_client_ping ();
+openssl_unique_ptr<EVP_PKEY>	rsa_client_load_private_key (uintptr_t key_id, RSA* public_rsa);
+void				rsa_client_set_socket (filedesc fd);
 
 #endif

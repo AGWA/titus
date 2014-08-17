@@ -141,23 +141,19 @@ const unsigned char dh_group16_generator[1] = {
 	0x02
 };
 
-DH* make_dh (const unsigned char* prime, size_t prime_len, const unsigned char* generator, size_t generator_len)
+openssl_unique_ptr<DH> make_dh (const unsigned char* prime, size_t prime_len, const unsigned char* generator, size_t generator_len)
 {
-	DH* dh;
-	if ((dh = DH_new()) == NULL) {
+	openssl_unique_ptr<DH> dh(DH_new());
+	if (!dh) {
 		throw Openssl_error(ERR_get_error());
 	}
 
 	if ((dh->p = BN_bin2bn(prime, prime_len, NULL)) == NULL) {
-		unsigned long err = ERR_get_error();
-		DH_free(dh);
-		throw Openssl_error(err);
+		throw Openssl_error(ERR_get_error());
 	}
 
 	if ((dh->g = BN_bin2bn(generator, generator_len, NULL)) == NULL) {
-		unsigned long err = ERR_get_error();
-		DH_free(dh);
-		throw Openssl_error(err);
+		throw Openssl_error(ERR_get_error());
 	}
 
 	return dh;

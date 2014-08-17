@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Andrew Ayer
+ * Copyright (C) 2008 Andrew Ayer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,24 +25,71 @@
  * authorization.
  */
 
-#ifndef DH_HPP
-#define DH_HPP
+#ifndef AGWA_FILEDESC_H
+#define AGWA_FILEDESC_H
 
-#include <openssl/dh.h>
-#include "util.hpp"
+#include <unistd.h>
+#include <errno.h>
 
-extern const unsigned char dh_group14_prime[256];
-extern const unsigned char dh_group14_generator[1];
-extern const unsigned char dh_group15_prime[384];
-extern const unsigned char dh_group15_generator[1];
-extern const unsigned char dh_group16_prime[512];
-extern const unsigned char dh_group16_generator[1];
+class filedesc {
+	int		fd;
 
-openssl_unique_ptr<DH> make_dh (const unsigned char* prime, size_t prime_len, const unsigned char* generator, size_t generator_len);
+	// No copy and assignment:
+#if __cplusplus >= 201103L /* C++11 */
+	filedesc& operator= (const filedesc&) = delete;
+	filedesc (const filedesc&) = delete;
+#else
+	filedesc& operator= (const filedesc&) { return *this; }
+	filedesc (const filedesc&) { }
+#endif
+public:
+	filedesc () { fd = -1; }
+	explicit filedesc (int _fd) { fd = _fd; }
+#if __cplusplus >= 201103L /* C++11 */
+	filedesc (filedesc&& other) noexcept { fd = other.release(); }
+	~filedesc () noexcept { if (fd >= 0) ::close(fd); }
+#else
+	~filedesc () { if (fd >= 0) ::close(fd); }
+#endif
 
-template<size_t prime_len, size_t generator_len> openssl_unique_ptr<DH> make_dh (const unsigned char (&prime)[prime_len], const unsigned char (&generator)[generator_len])
-{
-	return make_dh(prime, prime_len, generator, generator_len);
-}
+	int	get () const { return fd; }
+
+	operator int () const { return fd; }
+
+	filedesc&	operator= (int new_fd)
+	{
+		reset(new_fd);
+		return *this;
+	}
+#if __cplusplus >= 201103L /* C++11 */
+	filedesc&	operator= (filedesc&& other) noexcept
+	{
+		reset(other.release());
+		return *this;
+	}
+#endif
+
+	void	reset (int new_fd =-1)
+	{
+		int old_fd = fd;
+		fd = new_fd;
+		if (old_fd >= 0) ::close(old_fd);
+	}
+
+	int	release ()
+	{
+		int orig_fd = fd;
+		fd = -1;
+		return orig_fd;
+	}
+
+	int	close ()
+	{
+		int res = 0;
+		if (fd >= 0) res = ::close(fd);
+		fd = -1;
+		return res;
+	}
+};
 
 #endif

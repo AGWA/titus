@@ -36,7 +36,7 @@
 
 
 namespace {
-	int	sock = -1;
+	filedesc	sock;
 
 	void	send_to_server (const void* data, size_t len)
 	{
@@ -101,59 +101,43 @@ namespace {
 	}
 }
 
-EVP_PKEY*	rsa_client_load_private_key (uintptr_t key_id, RSA* public_rsa)
+openssl_unique_ptr<EVP_PKEY>	rsa_client_load_private_key (uintptr_t key_id, RSA* public_rsa)
 {
-	EVP_PKEY*	private_key = EVP_PKEY_new();
+	openssl_unique_ptr<EVP_PKEY>	private_key(EVP_PKEY_new());
 	if (!private_key) {
 		throw Openssl_error(ERR_get_error());
 	}
 
-	RSA*		rsa = RSA_new();
+	openssl_unique_ptr<RSA>		rsa(RSA_new());
 	if (!rsa) {
 		throw Openssl_error(ERR_get_error());
 	}
 
 	rsa->n = BN_dup(public_rsa->n);
 	if (!rsa->n) {
-		unsigned long	code = ERR_get_error();
-		RSA_free(rsa);
-		throw Openssl_error(code);
+		throw Openssl_error(ERR_get_error());
 	}
 	rsa->e = BN_dup(public_rsa->e);
 	if (!rsa->e) {
-		unsigned long	code = ERR_get_error();
-		RSA_free(rsa);
-		throw Openssl_error(code);
+		throw Openssl_error(ERR_get_error());
 	}
 
-	RSA_set_method(rsa, get_rsa_client_method());
-	if (!RSA_set_app_data(rsa, reinterpret_cast<void*>(key_id))) {
-		unsigned long	code = ERR_get_error();
-		RSA_free(rsa);
-		throw Openssl_error(code);
+	RSA_set_method(rsa.get(), get_rsa_client_method());
+	if (!RSA_set_app_data(rsa.get(), reinterpret_cast<void*>(key_id))) {
+		throw Openssl_error(ERR_get_error());
 	}
 
-	if (!EVP_PKEY_set1_RSA(private_key, rsa)) {
-		unsigned long	code = ERR_get_error();
-		RSA_free(rsa);
-		throw Openssl_error(code);
+	if (!EVP_PKEY_set1_RSA(private_key.get(), rsa.get())) {
+		throw Openssl_error(ERR_get_error());
 	}
 
-	RSA_free(rsa); // decrements ref count; private_key still holds a ref to it so it's not actually freed
+	// private_key increases ref count to rsa, so when rsa goes out of scope it's not actually freed
 
 	return private_key;
 }
 
-void	rsa_client_set_socket (int arg_sock)
+void	rsa_client_set_socket (filedesc arg_sock)
 {
-	sock = arg_sock;
-}
-
-void	rsa_client_ping ()
-{
-	uint8_t		command = 0;
-	send_to_server(&command, sizeof(command));
-	uint8_t		pong;
-	recv_from_server(&pong, sizeof(pong));
+	sock = std::move(arg_sock);
 }
 

@@ -31,13 +31,25 @@
 #include <string>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <openssl/rsa.h>
+#include <openssl/x509.h>
+#include <openssl/evp.h>
+#include <openssl/dh.h>
+#include <openssl/ssl.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/types.h>
-#include <netinet/ip.h>
+#include <netinet/in.h>
 #include <cctype>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <string.h>
+#include <unistd.h>
+#include <memory>
+#include <map>
+#include <stdlib.h>
+#include "filedesc.hpp"
 
 struct System_error {
 	std::string	syscall;
@@ -69,11 +81,29 @@ struct Key_protocol_error {
 	explicit Key_protocol_error (const std::string& arg_message) : message(arg_message) { }
 };
 
+struct openssl_deleter {
+	void operator() (X509* p) const { if (p) X509_free(p); }
+	void operator() (RSA* p) const { if (p) RSA_free(p); }
+	void operator() (EVP_PKEY* p) const { if (p) EVP_PKEY_free(p); }
+	void operator() (SSL* p) const { if (p) SSL_free(p); }
+	void operator() (SSL_CTX* p) const { if (p) SSL_CTX_free(p); }
+	void operator() (DH* p) const { if (p) DH_free(p); }
+	void operator() (EC_KEY* p) const { if (p) EC_KEY_free(p); }
+};
+template<class T> using openssl_unique_ptr = std::unique_ptr<T, openssl_deleter>;
+
+struct cstdio_deleter {
+	void operator() (std::FILE* p) const { if (p) fclose(p); }
+};
+template<class T> using cstdio_unique_ptr = std::unique_ptr<T, cstdio_deleter>;
+
 void set_nonblocking (int fd, bool nonblocking);
 void set_transparent (int sock_fd);
 void set_not_v6only (int sock_fd);
+void set_reuseaddr (int sock_fd);
 
 void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t drop_gid);
+void restrict_file_descriptors ();
 
 void write_all (int fd, const void* data, size_t len);
 bool read_all (int fd, void* data, size_t len);
@@ -117,5 +147,33 @@ inline Transparency parse_config_transparency (const char* str)
 }
 inline Transparency parse_config_transparency (const std::string& str) { return parse_config_transparency(str.c_str()); }
 
+filedesc make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen_t* addr_len);
+filedesc make_unix_socket (const std::string& path);
+
+std::string make_temp_directory ();
+
+template<class... Arg> pid_t spawn (int (*main_function)(Arg...), Arg... arg)
+{
+	// Note: don't use perfect forwarding of arguments in this function,
+	// because we want to ensure that objects moved into an argument have
+	// their destructors called in the parent process.
+	pid_t		pid = fork();
+	if (pid == -1) {
+		throw System_error("fork", "", errno);
+	}
+	if (pid == 0) {
+		try {
+			_exit(main_function(std::move(arg)...));
+		} catch (...) {
+			std::terminate();
+		}
+	}
+	return pid;
+}
+
+void set_ssl_options (SSL_CTX* ctx, const std::map<long, bool>& options);
+
+inline const std::string& coalesce (const std::string& first, const std::string& second) { return !first.empty() ? first : second; }
+template<class T> T* coalesce (T* first, T* second) { return first ? first : second; }
 
 #endif
