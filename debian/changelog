@@ -1,3 +1,9 @@
+titus (0.2-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Andrew Ayer <agwa@andrewayer.name>  Sun, 17 Aug 2014 13:00:58 -0700
+
 titus (0.1-1) unstable; urgency=low
 
   * Initial release.
