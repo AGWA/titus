@@ -1,2 +1,13 @@
+v0.2 (2014-08-17)
+  * Virtual host / SNI support: you can now specify different
+    certificates, backend addresses, and TLS options for different SNI
+    names or local socket addresses.
+  * Stronger sandboxing: setrlimit(2) is used to prevent isolated
+    processes from forking and accessing the network.
+  * Configuration directory support: use config-directory option to
+    load an entire directory full of config files.
+  * Fix bug that prevented transparent connections from the local host.
+  * Fix build errors on FreeBSD.
+
 v0.1 (2014-05-04)
   * Initial release.

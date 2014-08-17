@@ -34,7 +34,7 @@ handy if your backend's built-in TLS support is lacking.
 
 CURRENT STATUS
 
-The current version of titus is 0.1, released on 2014-05-04.  titus aims
+The current version of titus is 0.2, released on 2014-08-17.  titus aims
 to be bug-free and secure, though it has not yet undergone serious
 testing or performance optimization.  Additionally, we may make
 backwards-incompatible changes to the behavior before titus reaches
