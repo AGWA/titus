@@ -42,16 +42,11 @@ typedef uintptr_t Vhost_id;
 
 struct Vhost {
 	Vhost_id				id = 0;
-	std::string				local_address_string;
-	std::string				local_address_port;
 	struct sockaddr_in6			local_address;
-	std::string				backend_address_string;
-	std::string				backend_address_port;
 	struct sockaddr_in6			backend_address;
 	bool					servername_set = false;
 	std::string				servername;
 	std::string				key_filename;
-	std::string				cert_filename;
 	openssl_unique_ptr<SSL_CTX>		ssl_ctx;
 
 	Vhost ()

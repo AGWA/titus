@@ -279,3 +279,14 @@ std::string make_temp_directory ()
 	return path;
 }
 
+void set_ssl_options (SSL_CTX* ctx, const std::map<long, bool>& options)
+{
+	for (auto it(options.begin()); it != options.end(); ++it) {
+		if (it->second) {
+			SSL_CTX_set_options(ctx, it->first);
+		} else {
+			SSL_CTX_clear_options(ctx, it->first);
+		}
+	}
+
+}

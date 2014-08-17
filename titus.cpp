@@ -58,18 +58,36 @@ static volatile sig_atomic_t	is_running = 1;
 static volatile sig_atomic_t	pending_sigchld = 0;		// Set by signal handler so SIGCHLD can be handled in event loop
 
 namespace {
+	struct Basic_vhost_config {
+		std::map<long, bool>		ssl_options;
+		std::string			ciphers;
+		openssl_unique_ptr<DH>		dhgroup;
+		openssl_unique_ptr<EC_KEY>	ecdhcurve;
+		std::string			key_filename;
+		std::string			cert_filename;
+		std::string			backend_address_string;
+		std::string			backend_address_port;
+
+		bool process_param (const std::string& key, const std::string& value);
+	};
+	struct Vhost_config : Basic_vhost_config {
+		std::string			local_address_string;
+		std::string			local_address_port;
+		bool				servername_set = false;
+		std::string			servername;
+
+		bool process_param (const std::string& key, const std::string& value);
+		void read_config_file (std::istream& config_in);
+	};
+
 	// Config specific to parent:
 	bool			run_as_daemon = false;
 	std::string		pid_file;
 	uint16_t		listening_port = 0;		// stored in host byte order
 	unsigned int		min_spare_children = 3;		// Minimum number of children ready and waiting to accept()
 	unsigned int		max_children = 100;		// Absolute maximum number of children, spare or not
-	bool			has_default_vhost = false;
-	Vhost			default_vhost;
-	long			ssl_options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION | SSL_OP_CIPHER_SERVER_PREFERENCE;
-	std::string		ciphers;
-	openssl_unique_ptr<DH>	dhgroup;
-	openssl_unique_ptr<EC_KEY> ecdhcurve;
+	Basic_vhost_config	vhost_defaults;
+	std::vector<Vhost_config> vhost_configs;
 
 	// State specific to parent:
 	bool			pid_file_created = false;
@@ -234,45 +252,53 @@ namespace {
 		return SSL_TLSEXT_ERR_ALERT_FATAL;
 	}
 
-	void init_ssl_ctx (Vhost& vhost)
+	void init_ssl_ctx (Vhost& vhost, const Vhost_config& config)
 	{
 		vhost.ssl_ctx.reset(SSL_CTX_new(SSLv23_method()));
 		if (!vhost.ssl_ctx) {
 			throw Openssl_error(ERR_get_error());
 		}
 		SSL_CTX_set_mode(vhost.ssl_ctx.get(), SSL_MODE_AUTO_RETRY);
-		SSL_CTX_clear_options(vhost.ssl_ctx.get(), SSL_OP_NO_COMPRESSION | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_TLSv1_2 | SSL_OP_CIPHER_SERVER_PREFERENCE);
-		SSL_CTX_set_options(vhost.ssl_ctx.get(), SSL_OP_SINGLE_DH_USE | SSL_OP_SINGLE_ECDH_USE | ssl_options);
+		set_ssl_options(vhost.ssl_ctx.get(), vhost_defaults.ssl_options);
+		set_ssl_options(vhost.ssl_ctx.get(), config.ssl_options);
 
-		if (SSL_CTX_set_cipher_list(vhost.ssl_ctx.get(), ciphers.c_str()) != 1) {
-			throw Configuration_error("No TLS ciphers available from " + ciphers);
-		}
 		SSL_CTX_set_tlsext_servername_callback(vhost.ssl_ctx.get(), ssl_servername_cb);
-		if (dhgroup) {
-			if (SSL_CTX_set_tmp_dh(vhost.ssl_ctx.get(), dhgroup.get()) != 1) {
+
+		const std::string& ciphers(coalesce(config.ciphers, vhost_defaults.ciphers));
+		if (!ciphers.empty()) {
+			if (SSL_CTX_set_cipher_list(vhost.ssl_ctx.get(), ciphers.c_str()) != 1) {
+				throw Configuration_error("No TLS ciphers available from " + ciphers);
+			}
+		}
+		if (DH* dhgroup = coalesce(config.dhgroup.get(), vhost_defaults.dhgroup.get())) {
+			if (SSL_CTX_set_tmp_dh(vhost.ssl_ctx.get(), dhgroup) != 1) {
 				throw Configuration_error("Unable to set DH parameters: " + Openssl_error::message(ERR_get_error()));
 			}
 		}
-		if (ecdhcurve) {
-			if (SSL_CTX_set_tmp_ecdh(vhost.ssl_ctx.get(), ecdhcurve.get()) != 1) {
+		if (EC_KEY* ecdhcurve = coalesce(config.ecdhcurve.get(), vhost_defaults.ecdhcurve.get())) {
+			if (SSL_CTX_set_tmp_ecdh(vhost.ssl_ctx.get(), ecdhcurve) != 1) {
 				throw Configuration_error("Unable to set ECDH curve: " + Openssl_error::message(ERR_get_error()));
 			}
 		}
 
-		if (access(vhost.key_filename.c_str(), R_OK) == -1) {
-			throw Configuration_error("Unable to read TLS key file: " + vhost.key_filename + ": " + std::string(std::strerror(errno)));
-		}
+		const std::string& key_filename(coalesce(config.key_filename, vhost_defaults.key_filename));
+		const std::string& cert_filename(coalesce(config.cert_filename, vhost_defaults.cert_filename));
 
-		cstdio_unique_ptr<std::FILE>	fp(std::fopen(vhost.cert_filename.c_str(), "r"));
+		if (access(key_filename.c_str(), R_OK) == -1) {
+			throw Configuration_error("Unable to read TLS key file: " + key_filename + ": " + std::string(std::strerror(errno)));
+		}
+		vhost.key_filename = key_filename;
+
+		cstdio_unique_ptr<std::FILE>	fp(std::fopen(cert_filename.c_str(), "r"));
 		if (!fp) {
-			throw Configuration_error("Unable to read TLS cert file: " + vhost.cert_filename + ": " + std::string(std::strerror(errno)));
+			throw Configuration_error("Unable to read TLS cert file: " + cert_filename + ": " + std::string(std::strerror(errno)));
 		}
 
 		// Try to read a private key from the file.  For isolation, titus doesn't allow mixing private keys
 		// and certs in the same file, so if we can successfully read the private key, error out.
 		if (EVP_PKEY* privkey = PEM_read_PrivateKey(fp.get(), NULL, NULL, NULL)) {
 			EVP_PKEY_free(privkey);
-			throw Configuration_error("TLS cert file " + vhost.cert_filename + " contains a private key");
+			throw Configuration_error("TLS cert file " + cert_filename + " contains a private key");
 		}
 		fseek(fp.get(), 0, SEEK_SET);
 
@@ -321,89 +347,34 @@ namespace {
 		const unsigned long code = ERR_get_error();
 		if (!(ERR_GET_LIB(code) == ERR_LIB_PEM && ERR_GET_REASON(code) == PEM_R_NO_START_LINE)) {
 			// Not simply a harmless end-of-file error
-			throw Configuration_error("Unable to load TLS cert: " + vhost.cert_filename + ": " + Openssl_error::message(code));
+			throw Configuration_error("Unable to load TLS cert: " + cert_filename + ": " + Openssl_error::message(code));
 		}
 	}
 
-	void resolve_addresses (Vhost& vhost)
+	void resolve_addresses (Vhost& vhost, const Vhost_config& config)
 	{
+		const auto& backend_address_string(coalesce(config.backend_address_string, vhost_defaults.backend_address_string));
+		const auto& backend_address_port(coalesce(config.backend_address_port, vhost_defaults.backend_address_port));
+
 		if (transparent == TRANSPARENT_ON) {
-			if (!vhost.backend_address_string.empty() || !vhost.backend_address_port.empty()) {
+			if (!backend_address_string.empty() || !backend_address_port.empty()) {
 				throw Configuration_error("backend and backend-address cannot be specified in transparent mode");
 			}
 		} else {
-			if (vhost.backend_address_port.empty()) {
+			if (backend_address_port.empty()) {
 				throw Configuration_error("No backend-port specified");
 			}
-			resolve_address(&vhost.backend_address, vhost.backend_address_string, vhost.backend_address_port);
+			resolve_address(&vhost.backend_address, backend_address_string, backend_address_port);
 		}
 
-		if (!vhost.local_address_string.empty() || !vhost.local_address_port.empty()) {
-			resolve_address(&vhost.local_address, vhost.local_address_string, vhost.local_address_port);
-		}
-	}
-
-	void process_vhost_param (Vhost& vhost, const std::string& key, const std::string& value)
-	{
-		if (key == "key") {
-			vhost.key_filename = value;
-		} else if (key == "cert") {
-			vhost.cert_filename = value;
-		} else if (key == "backend") {
-			vhost.backend_address_string = value;
-		} else if (key == "backend-port") {
-			vhost.backend_address_port = value;
-		} else if (key == "local-address") {
-			vhost.local_address_string = value;
-		} else if (key == "local-port") {
-			vhost.local_address_port = value;
-		} else if (key == "sni-name") {
-			vhost.servername_set = true;
-			if (value == "\"\"") { // ""
-				// treat "" as the empty server name
-				vhost.servername = "";
-			} else {
-				vhost.servername = value;
-			}
-		} else {
-			throw Configuration_error("Unknown vhost parameter `" + key + "'");
+		if (!config.local_address_string.empty() || !config.local_address_port.empty()) {
+			resolve_address(&vhost.local_address, config.local_address_string, config.local_address_port);
 		}
 	}
 
-	void process_config_param (const std::string& key, const std::string& value)
+	bool Basic_vhost_config::process_param (const std::string& key, const std::string& value)
 	{
-		if (key == "config") {
-			read_config_file(value);
-		} else if (key == "daemon") {
-			run_as_daemon = parse_config_bool(value);
-		} else if (key == "pid-file") {
-			pid_file = value;
-		} else if (key == "port") {
-			listening_port = std::atoi(value.c_str());
-		} else if (key == "transparent") {
-			transparent = parse_config_transparency(value);
-		} else if (key == "backend" || key == "backend-port" || key == "key" || key == "cert") {
-			has_default_vhost = true;
-			process_vhost_param(default_vhost, key, value);
-		} else if (key == "backend-port") {
-			default_vhost.backend_address_port = value;
-		} else if (key == "min-spare-children") {
-			min_spare_children = std::atoi(value.c_str());
-		} else if (key == "max-children") {
-			max_children = std::atoi(value.c_str());
-		} else if (key == "max-handshake-time") {
-			max_handshake_time = std::atoi(value.c_str());
-		} else if (key == "network-user") {
-			drop_uid_network = resolve_user(value);
-		} else if (key == "network-group") {
-			drop_gid_network = resolve_group(value);
-		} else if (key == "keyserver-user") {
-			drop_uid_keyserver = resolve_user(value);
-		} else if (key == "keyserver-group") {
-			drop_gid_keyserver = resolve_group(value);
-		} else if (key == "chroot") {
-			chroot_directory = value;
-		} else if (key == "ciphers") {
+		if (key == "ciphers") {
 			ciphers = value;
 		} else if (key == "dhgroup") {
 			openssl_unique_ptr<DH>	dh;
@@ -429,23 +400,87 @@ namespace {
 			}
 			ecdhcurve = std::move(ecdh);
 		} else if (key == "compression") {
-			set_bit(ssl_options, SSL_OP_NO_COMPRESSION, !parse_config_bool(value));
+			ssl_options[SSL_OP_NO_COMPRESSION] = !parse_config_bool(value);
 		} else if (key == "sslv3") {
-			set_bit(ssl_options, SSL_OP_NO_SSLv3, !parse_config_bool(value));
+			ssl_options[SSL_OP_NO_SSLv3] = !parse_config_bool(value);
 		} else if (key == "tlsv1") {
-			set_bit(ssl_options, SSL_OP_NO_TLSv1, !parse_config_bool(value));
+			ssl_options[SSL_OP_NO_TLSv1] = !parse_config_bool(value);
 		} else if (key == "tlsv1.1") {
-			set_bit(ssl_options, SSL_OP_NO_TLSv1_1, !parse_config_bool(value));
+			ssl_options[SSL_OP_NO_TLSv1_1] = !parse_config_bool(value);
 		} else if (key == "tlsv1.2") {
-			set_bit(ssl_options, SSL_OP_NO_TLSv1_2, !parse_config_bool(value));
+			ssl_options[SSL_OP_NO_TLSv1_2] = !parse_config_bool(value);
 		} else if (key == "honor-client-cipher-order") {
-			set_bit(ssl_options, SSL_OP_CIPHER_SERVER_PREFERENCE, !parse_config_bool(value));
+			ssl_options[SSL_OP_CIPHER_SERVER_PREFERENCE] = !parse_config_bool(value);
+		} else if (key == "key") {
+			key_filename = value;
+		} else if (key == "cert") {
+			cert_filename = value;
+		} else if (key == "backend") {
+			backend_address_string = value;
+		} else if (key == "backend-port") {
+			backend_address_port = value;
 		} else {
-			throw Configuration_error("Unknown config parameter `" + key + "'");
+			return false;
+		}
+		return true;
+	}
+
+	bool Vhost_config::process_param (const std::string& key, const std::string& value)
+	{
+		if (key == "local-address") {
+			local_address_string = value;
+		} else if (key == "local-port") {
+			local_address_port = value;
+		} else if (key == "sni-name") {
+			servername_set = true;
+			if (value == "\"\"") { // ""
+				// treat "" as the empty server name
+				servername = "";
+			} else {
+				servername = value;
+			}
+		} else {
+			return Basic_vhost_config::process_param(key, value);
+		}
+		return true;
+	}
+
+	void process_config_param (const std::string& key, const std::string& value)
+	{
+		if (key == "config") {
+			read_config_file(value);
+		} else if (key == "daemon") {
+			run_as_daemon = parse_config_bool(value);
+		} else if (key == "pid-file") {
+			pid_file = value;
+		} else if (key == "port") {
+			listening_port = std::atoi(value.c_str());
+		} else if (key == "transparent") {
+			transparent = parse_config_transparency(value);
+		} else if (key == "min-spare-children") {
+			min_spare_children = std::atoi(value.c_str());
+		} else if (key == "max-children") {
+			max_children = std::atoi(value.c_str());
+		} else if (key == "max-handshake-time") {
+			max_handshake_time = std::atoi(value.c_str());
+		} else if (key == "network-user") {
+			drop_uid_network = resolve_user(value);
+		} else if (key == "network-group") {
+			drop_gid_network = resolve_group(value);
+		} else if (key == "keyserver-user") {
+			drop_uid_keyserver = resolve_user(value);
+		} else if (key == "keyserver-group") {
+			drop_gid_keyserver = resolve_group(value);
+		} else if (key == "chroot") {
+			chroot_directory = value;
+		} else {
+			if (!vhost_defaults.process_param(key, value)) {
+				throw Configuration_error("Unknown config parameter `" + key + "'");
+			}
 		}
 	}
 
-	void read_config_file_vhost (Vhost& vhost, std::istream& config_in)
+	void Vhost_config::read_config_file (std::istream& config_in)
 	{
 		while (config_in.good() && config_in.peek() != -1) {
 			if (!std::isspace(config_in.peek()) && config_in.peek() != '#') {
@@ -475,7 +510,9 @@ namespace {
 			std::string		value;
 			std::getline(config_in, value);
 
-			process_vhost_param(vhost, directive, value);
+			if (!process_param(directive, value)) {
+				throw Configuration_error("Unknown vhost parameter `" + directive + "'");
+			}
 		}
 	}
 
@@ -498,8 +535,8 @@ namespace {
 			config_in >> directive;
 
 			if (directive == "vhost") {
-				vhosts.push_back(Vhost());
-				read_config_file_vhost(vhosts.back(), config_in);
+				vhost_configs.push_back(Vhost_config());
+				vhost_configs.back().read_config_file(config_in);
 			} else {
 				// skip whitespace
 				config_in >> std::ws;
@@ -549,6 +586,19 @@ try {
 	SSL_library_init();
 	SSL_load_error_strings();
 
+	// Set default SSL options, which can be overridden by config file
+	vhost_defaults.ssl_options[SSL_OP_NO_COMPRESSION] = true;
+	vhost_defaults.ssl_options[SSL_OP_NO_SSLv3] = true;
+	vhost_defaults.ssl_options[SSL_OP_NO_TLSv1] = false;
+	vhost_defaults.ssl_options[SSL_OP_NO_TLSv1_1] = false;
+	vhost_defaults.ssl_options[SSL_OP_NO_TLSv1_2] = false;
+	vhost_defaults.ssl_options[SSL_OP_CIPHER_SERVER_PREFERENCE] = true;
+
+	// These can't be overriden by config file:
+	vhost_defaults.ssl_options[SSL_OP_SINGLE_DH_USE] = true;
+	vhost_defaults.ssl_options[SSL_OP_SINGLE_ECDH_USE] = true;
+	vhost_defaults.ssl_options[SSL_OP_NO_SSLv2] = true;
+
 	// Command line arguments come in pairs of the form "--name value" and correspond
 	// directly to the name/value option pairs in the config file (a la OpenVPN).
 	for (int i = 1; i < argc; ) {
@@ -561,21 +611,26 @@ try {
 		}
 	}
 
-	if (has_default_vhost) {
-		if (!vhosts.empty()) {
-			throw Configuration_error("backend, backend-port, key, and cert cannot be specified outside of a virtual host if virtual hosts are declared");
-		}
-
-		vhosts.push_back(std::move(default_vhost));
+	if (vhost_configs.empty()) {
+		// No vhosts specified, so add one implicitly that matches all local addresses / SNI names.
+		// It will use the options from vhost_defaults.
+		vhost_configs.emplace_back();
 	}
-	for (size_t i = 0; i < vhosts.size(); ++i) {
-		vhosts[i].id = i;
-		init_ssl_ctx(vhosts[i]);
-		resolve_addresses(vhosts[i]);
+
+	for (size_t i = 0; i < vhost_configs.size(); ++i) {
+		vhosts.emplace_back();
+		Vhost&		vhost(vhosts.back());
+		Vhost_config&	config(vhost_configs[i]);
+
+		vhost.id = i;
+		vhost.servername_set = config.servername_set;
+		vhost.servername = config.servername;
+		init_ssl_ctx(vhost, config);
+		resolve_addresses(vhost, config);
 	}
 	// Free up some memory that's no longer needed:
-	dhgroup.reset();
-	ecdhcurve.reset();
+	vhost_configs.clear();
+	vhost_defaults = Basic_vhost_config();
 
 	// Listen
 	listening_sock = socket(AF_INET6, SOCK_STREAM, 0);

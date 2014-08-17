@@ -47,6 +47,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <memory>
+#include <map>
 #include <stdlib.h>
 #include "filedesc.hpp"
 
@@ -170,10 +171,9 @@ template<class... Arg> pid_t spawn (int (*main_function)(Arg...), Arg... arg)
 	return pid;
 }
 
-template<class T, class U> inline void set_bit (T& bits, U bit, bool on)
-{
-	if (on)	bits |= bit;
-	else	bits &= ~bit;
-}
+void set_ssl_options (SSL_CTX* ctx, const std::map<long, bool>& options);
+
+inline const std::string& coalesce (const std::string& first, const std::string& second) { return !first.empty() ? first : second; }
+template<class T> T* coalesce (T* first, T* second) { return first ? first : second; }
 
 #endif
