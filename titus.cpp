@@ -52,6 +52,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <openssl/err.h>
 
 static volatile sig_atomic_t	is_running = 1;
@@ -372,6 +373,29 @@ namespace {
 		}
 	}
 
+	int config_directory_filter (const struct dirent* ent)
+	{
+		return ent->d_name[0] != '.';
+	}
+
+	void read_config_directory (const std::string& path)
+	{
+		struct dirent**	namelist;
+		int		n = scandir(path.c_str(), &namelist, config_directory_filter, alphasort);
+		if (n < 0) {
+			throw Configuration_error("Unable to read configuration directory " + path + ": " + std::strerror(errno));
+		}
+		std::vector<std::string>	filenames;
+		for (int i = 0; i < n; ++i) {
+			filenames.push_back(namelist[i]->d_name);
+			free(namelist[i]);
+		}
+		free(namelist);
+		for (auto filename(filenames.begin()); filename != filenames.end(); ++filename) {
+			read_config_file(path + "/" + *filename);
+		}
+	}
+
 	bool Basic_vhost_config::process_param (const std::string& key, const std::string& value)
 	{
 		if (key == "ciphers") {
@@ -449,6 +473,8 @@ namespace {
 	{
 		if (key == "config") {
 			read_config_file(value);
+		} else if (key == "config-directory") {
+			read_config_directory(value);
 		} else if (key == "daemon") {
 			run_as_daemon = parse_config_bool(value);
 		} else if (key == "pid-file") {

@@ -49,6 +49,10 @@ starting with '#' are ignored.
 
 Config files can recursively include other config files via the \fBconfig\fR option.
 .TP
+.BI config-directory \ \fIpath\fR
+Load additional configuration files from \fIpath\fR.  Configuration files
+are loaded in lexicographical order.  Hidden files are ignored.
+.TP
 .BI daemon \ \fByes\fR\ |\ \fBno\fR
 If set to "yes," daemonize after initialization is complete.  Defaults to "no."
 .TP
