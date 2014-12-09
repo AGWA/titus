@@ -602,6 +602,11 @@ try {
 	SSL_library_init();
 	SSL_load_error_strings();
 
+	// This cipher list is the "Intermediate compatibility" list from https://wiki.mozilla.org/Security/Server_Side_TLS#Intermediate_compatibility_.28default.29 as of 2014-12-09
+	vhost_defaults.ciphers = "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:AES:CAMELLIA:DES-CBC3-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA";
+	vhost_defaults.dhgroup = make_dh(dh_group14_prime, dh_group14_generator); // 2048 bit group
+	vhost_defaults.ecdhcurve = get_ecdhcurve("prime256v1"); // a.k.a. secp256r1
+
 	// Set default SSL options, which can be overridden by config file
 	vhost_defaults.ssl_options[SSL_OP_NO_COMPRESSION] = true;
 	vhost_defaults.ssl_options[SSL_OP_NO_SSLv3] = true;

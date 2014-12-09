@@ -2,7 +2,7 @@ Features:
 	Near-term:
 		[DONE] Non-transparent operation
 		[DONE] SNI support
-		Reasonable default options for: dhgroup, ecdhcurve, and ciphers
+		[DONE] Reasonable default options for: dhgroup, ecdhcurve, and ciphers
 		More DH groups
 		[DONE] Stop spawning children if spare children are constantly failing
 		[DONE] Better robustness with RSA server:
