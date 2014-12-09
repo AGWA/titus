@@ -290,3 +290,16 @@ void set_ssl_options (SSL_CTX* ctx, const std::map<long, bool>& options)
 	}
 
 }
+
+openssl_unique_ptr<EC_KEY> get_ecdhcurve (const std::string& name)
+{
+	int     nid = OBJ_sn2nid(name.c_str());
+	if (nid == NID_undef) {
+		throw Configuration_error("Unknown ECDH curve `" + name + "'");
+	}
+	openssl_unique_ptr<EC_KEY>      ecdh(EC_KEY_new_by_curve_name(nid));
+	if (!ecdh) {
+		throw Configuration_error("Unable to create ECDH curve: " + Openssl_error::message(ERR_get_error()));
+	}
+	return ecdh;
+}

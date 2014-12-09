@@ -173,6 +173,8 @@ template<class... Arg> pid_t spawn (int (*main_function)(Arg...), Arg... arg)
 
 void set_ssl_options (SSL_CTX* ctx, const std::map<long, bool>& options);
 
+openssl_unique_ptr<EC_KEY> get_ecdhcurve (const std::string& name);
+
 inline const std::string& coalesce (const std::string& first, const std::string& second) { return !first.empty() ? first : second; }
 template<class T> T* coalesce (T* first, T* second) { return first ? first : second; }
 

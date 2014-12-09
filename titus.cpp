@@ -401,28 +401,18 @@ namespace {
 		if (key == "ciphers") {
 			ciphers = value;
 		} else if (key == "dhgroup") {
-			openssl_unique_ptr<DH>	dh;
 			// TODO: support custom DH parameters, additional pre-defined groups
 			if (value == "14") {
-				dh = make_dh(dh_group14_prime, dh_group14_generator);
+				dhgroup = make_dh(dh_group14_prime, dh_group14_generator);
 			} else if (value == "15") {
-				dh = make_dh(dh_group15_prime, dh_group15_generator);
+				dhgroup = make_dh(dh_group15_prime, dh_group15_generator);
 			} else if (value == "16") {
-				dh = make_dh(dh_group16_prime, dh_group16_generator);
+				dhgroup = make_dh(dh_group16_prime, dh_group16_generator);
 			} else {
 				throw Configuration_error("Unknown DH group `" + value + "'");
 			}
-			dhgroup = std::move(dh);
 		} else if (key == "ecdhcurve") {
-			int	nid = OBJ_sn2nid(value.c_str());
-			if (nid == NID_undef) {
-				throw Configuration_error("Unknown ECDH curve `" + value + "'");
-			}
-			openssl_unique_ptr<EC_KEY>	ecdh(EC_KEY_new_by_curve_name(nid));
-			if (!ecdh) {
-				throw Configuration_error("Unable to create ECDH curve: " + Openssl_error::message(ERR_get_error()));
-			}
-			ecdhcurve = std::move(ecdh);
+			ecdhcurve = get_ecdhcurve(value);
 		} else if (key == "compression") {
 			ssl_options[SSL_OP_NO_COMPRESSION] = !parse_config_bool(value);
 		} else if (key == "sslv3") {
