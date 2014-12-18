@@ -244,7 +244,7 @@ gid_t resolve_group (const std::string& group)
 
 filedesc make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen_t* addr_len)
 {
-	if (path.size() + 1 >= sizeof(addr->sun_path)) {
+	if (path.size() >= sizeof(addr->sun_path) - 1) {
 		throw System_error("make_unix_socket", path, ENAMETOOLONG);
 	}
 	unlink(path.c_str());
