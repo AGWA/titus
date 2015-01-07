@@ -178,4 +178,6 @@ openssl_unique_ptr<EC_KEY> get_ecdhcurve (const std::string& name);
 inline const std::string& coalesce (const std::string& first, const std::string& second) { return !first.empty() ? first : second; }
 template<class T> T* coalesce (T* first, T* second) { return first ? first : second; }
 
+inline void chomp (std::string& str) { str.erase(str.find_last_not_of(" \t\r\n") + 1); } // NB: std::string::npos+1==0
+
 #endif

@@ -525,6 +525,7 @@ namespace {
 			// read directive value
 			std::string		value;
 			std::getline(config_in, value);
+			chomp(value);
 
 			if (!process_param(directive, value)) {
 				throw Configuration_error("Unknown vhost parameter `" + directive + "'");
@@ -560,6 +561,7 @@ namespace {
 				// read directive value
 				std::string		value;
 				std::getline(config_in, value);
+				chomp(value);
 
 				process_config_param(directive, value);
 			}
