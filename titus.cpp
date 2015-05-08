@@ -322,7 +322,7 @@ namespace {
 		}
 
 		// Create a RSA private key "client"
-		openssl_unique_ptr<EVP_PKEY>	privkey(rsa_client_load_private_key(vhost.id, public_rsa.get()));
+		openssl_unique_ptr<EVP_PKEY>	privkey(rsa_client.load_private_key(vhost.id, public_rsa.get()));
 		public_rsa.reset();
 
 		// Use this private key for SSL:

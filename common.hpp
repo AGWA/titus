@@ -29,6 +29,7 @@
 #define COMMON_HHP
 
 #include "util.hpp"
+#include "rsa_client.hpp"
 #include <string>
 #include <vector>
 #include <sys/types.h>
@@ -77,5 +78,6 @@ extern int			children_pipe[2];		// Used by children to tell us when they accept 
 extern struct sockaddr_un	keyserver_sockaddr;
 extern socklen_t		keyserver_sockaddr_len;
 extern Vhost*			active_vhost;
+extern Rsa_client		rsa_client;
 
 #endif

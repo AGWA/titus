@@ -310,7 +310,7 @@ try {
 		throw System_error("connect", keyserver_sockaddr.sun_path, errno);
 	}
 
-	rsa_client_set_socket(std::move(keyserver_client_sock));
+	rsa_client.set_socket(std::move(keyserver_client_sock));
 
 	// Create the backend socket.  Since setting transparency requires privilege,
 	// we do it while we're still root.
