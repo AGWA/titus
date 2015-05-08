@@ -48,6 +48,8 @@
 #include <unistd.h>
 #include <memory>
 #include <map>
+#include <tuple>
+#include <type_traits>
 #include <stdlib.h>
 #include "filedesc.hpp"
 
@@ -152,22 +154,26 @@ filedesc make_unix_socket (const std::string& path);
 
 std::string make_temp_directory ();
 
-template<class... Arg> pid_t spawn (int (*main_function)(Arg...), Arg... arg)
+template<class... Formal, class... Arg> pid_t spawn (int (*main_function)(Formal...), Arg&&... arg)
 {
-	// Note: don't use perfect forwarding of arguments in this function,
-	// because we want to ensure that objects moved into an argument have
-	// their destructors called in the parent process.
 	pid_t		pid = fork();
 	if (pid == -1) {
 		throw System_error("fork", "", errno);
 	}
 	if (pid == 0) {
 		try {
-			_exit(main_function(std::move(arg)...));
+			// Don't pass the result of main_function() directly to _exit(),
+			// or else the destructors for main_function's arguments won't be invoked
+			// (since _exit never returns).
+			const int status = main_function(std::forward<Arg>(arg)...);
+			_exit(status);
 		} catch (...) {
 			std::terminate();
 		}
 	}
+	// Take ownership of every argument to ensure that their destructors are called in
+	// the parent process if they were moved into this function.
+	std::tuple<Formal...>(std::forward<Arg>(arg)...);
 	return pid;
 }
 
