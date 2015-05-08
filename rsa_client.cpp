@@ -89,7 +89,7 @@ namespace {
 		return sig_len;
 	}
 
-	RSA_METHOD*	get_rsa_client_method ()
+	const RSA_METHOD*	get_rsa_client_method ()
 	{
 		static RSA_METHOD ops;
 		if (!ops.rsa_priv_enc) {
