@@ -37,11 +37,11 @@
 #include <openssl/rsa.h>
 #include <vector>
 
-namespace {
-	filedesc				keyserver_sock;
+struct Key_server {
+	filedesc				sock;
 	std::vector<openssl_unique_ptr<RSA>>	keys;
 
-	void init_signals ()
+	static void init_signals ()
 	{
 		signal(SIGINT, SIG_DFL);
 		signal(SIGTERM, SIG_DFL);
@@ -53,10 +53,10 @@ namespace {
 		sigprocmask(SIG_SETMASK, &empty_sigset, NULL);
 	}
 
-	int keyserver_child_main (filedesc sock)
+	static int child_main (Key_server& keyserver, filedesc client_sock)
 	try {
 		// Close file descriptors we don't need
-		keyserver_sock.close();
+		keyserver.sock.close();
 
 		// Reseed OpenSSL RNG b/c we just forked
 		if (RAND_poll() != 1) {
@@ -68,7 +68,7 @@ namespace {
 		restrict_file_descriptors();
 
 		// Read and respond to RSA operations
-		run_rsa_server(std::move(keys), std::move(sock));
+		run_rsa_server(std::move(keyserver.keys), std::move(client_sock));
 		return 0;
 	} catch (const System_error& error) {
 		std::clog << "System error in key server child: " << error.syscall;
@@ -84,12 +84,13 @@ namespace {
 		std::clog << "Key protocol error in key server child: " << error.message << std::endl;
 		return 6;
 	}
-}
+};
 
 int keyserver_main (filedesc arg_keyserver_sock)
 try {
-	keyserver_sock = std::move(arg_keyserver_sock);
-	init_signals();
+	Key_server	keyserver;
+	keyserver.sock = std::move(arg_keyserver_sock);
+	Key_server::init_signals();
 
 	// Close file descriptors we don't need
 	close(listening_sock);
@@ -100,7 +101,7 @@ try {
 	}
 
 	// Load private keys
-	keys.reserve(vhosts.size());
+	keyserver.keys.reserve(vhosts.size());
 	for (std::vector<Vhost>::iterator vhost(vhosts.begin()); vhost != vhosts.end(); ++vhost) {
 		cstdio_unique_ptr<std::FILE>	fp(std::fopen(vhost->key_filename.c_str(), "r"));
 		if (!fp) {
@@ -111,19 +112,19 @@ try {
 		if (!rsa) {
 			throw Openssl_error(ERR_get_error());
 		}
-		keys.push_back(std::move(rsa));
+		keyserver.keys.push_back(std::move(rsa));
 	}
 
 	// Accept and service connections
 	while (true) {
-		filedesc	client_sock(accept(keyserver_sock, NULL, NULL));
+		filedesc	client_sock(accept(keyserver.sock, NULL, NULL));
 		if (client_sock == -1) {
 			if (errno == ECONNABORTED) {
 				continue;
 			}
 			throw System_error("accept", "", errno);
 		}
-		spawn(keyserver_child_main, std::move(client_sock));
+		spawn(Key_server::child_main, std::ref(keyserver), std::move(client_sock));
 	}
 
 	return 0;
