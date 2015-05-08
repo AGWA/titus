@@ -310,12 +310,12 @@ namespace {
 		}
 
 		// Get the RSA public key from it:
-		EVP_PKEY*			pubkey = X509_get_pubkey(crt.get());
+		openssl_unique_ptr<EVP_PKEY>	pubkey(X509_get_pubkey(crt.get()));
 		if (!pubkey) {
 			throw Configuration_error("Unable to load TLS cert: malformed X509 file?");
 		}
 
-		openssl_unique_ptr<RSA>		public_rsa(EVP_PKEY_get1_RSA(pubkey));
+		openssl_unique_ptr<RSA>		public_rsa(EVP_PKEY_get1_RSA(pubkey.get()));
 		if (!public_rsa) {
 			// not an RSA key
 			throw Configuration_error("Unable to load TLS cert: does not correspond to an RSA key");
