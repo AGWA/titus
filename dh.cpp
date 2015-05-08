@@ -29,7 +29,7 @@
 #include "util.hpp"
 #include <openssl/err.h>
 
-/* Diffie-Hellman Group 14, as per RFC3526 */
+/* Diffie-Hellman Group 14 (2048 bits), as per RFC3526 */
 const unsigned char dh_group14_prime[256] = {
 	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,		0xC9, 0x0F, 0xDA, 0xA2, 0x21, 0x68, 0xC2, 0x34,
 	0xC4, 0xC6, 0x62, 0x8B, 0x80, 0xDC, 0x1C, 0xD1,		0x29, 0x02, 0x4E, 0x08, 0x8A, 0x67, 0xCC, 0x74,
@@ -52,7 +52,7 @@ const unsigned char dh_group14_generator[1] = {
 	0x02
 };
 
-/* Diffie-Hellman Group 15, as per RFC3526 */
+/* Diffie-Hellman Group 15 (3072 bits), as per RFC3526 */
 const unsigned char dh_group15_prime[384] = {
 	0xFF, 0xFF, 0xFF, 0xFF,  0xFF, 0xFF, 0xFF, 0xFF,  0xC9, 0x0F, 0xDA, 0xA2, 
 	0x21, 0x68, 0xC2, 0x34,  0xC4, 0xC6, 0x62, 0x8B,  0x80, 0xDC, 0x1C, 0xD1, 
@@ -91,7 +91,7 @@ const unsigned char dh_group15_generator[1] = {
 	0x02
 };
 
-/* Diffie-Hellman Group 16, as per RFC3526 */
+/* Diffie-Hellman Group 16 (4096 bits), as per RFC3526 */
 const unsigned char dh_group16_prime[512] = {
 	0xFF, 0xFF, 0xFF, 0xFF,  0xFF, 0xFF, 0xFF, 0xFF,  0xC9, 0x0F, 0xDA, 0xA2, 
 	0x21, 0x68, 0xC2, 0x34,  0xC4, 0xC6, 0x62, 0x8B,  0x80, 0xDC, 0x1C, 0xD1, 
@@ -159,3 +159,14 @@ openssl_unique_ptr<DH> make_dh (const unsigned char* prime, size_t prime_len, co
 	return dh;
 }
 
+openssl_unique_ptr<DH> make_dh_for_rsa_size (unsigned int modulus_size_in_bits)
+{
+	if (modulus_size_in_bits <= 2048) {
+		return make_dh(dh_group14_prime, dh_group14_generator);
+	} else if (modulus_size_in_bits <= 3072) {
+		return make_dh(dh_group15_prime, dh_group15_generator);
+	} else if (modulus_size_in_bits <= 4096) {
+		return make_dh(dh_group16_prime, dh_group16_generator);
+	}
+	return nullptr;
+}
