@@ -185,5 +185,6 @@ inline const std::string& coalesce (const std::string& first, const std::string&
 template<class T> T* coalesce (T* first, T* second) { return first ? first : second; }
 
 inline void chomp (std::string& str) { str.erase(str.find_last_not_of(" \t\r\n") + 1); } // NB: std::string::npos+1==0
+bool ascii_streqi (const char*, const char*); // case-insensitive string comparison
 
 #endif

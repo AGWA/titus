@@ -58,7 +58,7 @@ struct Vhost {
 
 	bool matches_servername (const char* arg_servername) const
 	{
-		return !servername_set || servername == arg_servername;
+		return !servername_set || ascii_streqi(servername.c_str(), arg_servername);
 	}
 };
 

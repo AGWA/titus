@@ -303,3 +303,20 @@ openssl_unique_ptr<EC_KEY> get_ecdhcurve (const std::string& name)
 	}
 	return ecdh;
 }
+
+namespace {
+	// Avoid the ctype.h functions because they do locale stuff
+	inline char	ascii_tolower (char c) { return (c >= 'A' && c <= 'Z' ? c | 32 : c); }
+}
+
+bool ascii_streqi (const char* a, const char* b)
+{
+	while (ascii_tolower(*a) == ascii_tolower(*b)) {
+		if (*a == '\0') {
+			return true;
+		}
+		++a;
+		++b;
+	}
+	return false;
+}
