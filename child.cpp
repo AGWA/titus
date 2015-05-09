@@ -376,6 +376,24 @@ try {
 
 	active_vhost = &vhosts[0];
 
+	if (transparent != TRANSPARENT_OFF) {
+		// Impersonate the client when talking to the backend.
+		if (bind(backend_sock, reinterpret_cast<const struct sockaddr*>(&client_address), client_address_len) == -1) {
+			if (errno != EADDRINUSE) {
+				throw System_error("bind", "", errno);
+			}
+
+			// If we get EADDRINUSE it means the client is local so there is no way
+			// to impersonate the port number.  Zero out the port number so one is
+			// assigned dynamically.  (Unfortunately the backend won't see the true source port
+			// number, but backends generally only care about source IP address.)
+			client_address.sin6_port = 0;
+			if (bind(backend_sock, reinterpret_cast<const struct sockaddr*>(&client_address), client_address_len) == -1) {
+				throw System_error("bind", "", errno);
+			}
+		}
+	}
+
 	// SSL Handshake
 	openssl_unique_ptr<SSL>		ssl(SSL_new(active_vhost->ssl_ctx.get()));
 	if (!SSL_set_fd(ssl.get(), client_sock)) {
@@ -404,24 +422,6 @@ try {
 		}
 	}
 	alarm(0);
-
-	if (transparent != TRANSPARENT_OFF) {
-		// Impersonate the client when talking to the backend.
-		if (bind(backend_sock, reinterpret_cast<const struct sockaddr*>(&client_address), client_address_len) == -1) {
-			if (errno != EADDRINUSE) {
-				throw System_error("bind", "", errno);
-			}
-
-			// If we get EADDRINUSE it means the client is local so there is no way
-			// to impersonate the port number.  Zero out the port number so one is
-			// assigned dynamically.  (Unfortunately the backend won't see the true source port
-			// number, but backends generally only care about source IP address.)
-			client_address.sin6_port = 0;
-			if (bind(backend_sock, reinterpret_cast<const struct sockaddr*>(&client_address), client_address_len) == -1) {
-				throw System_error("bind", "", errno);
-			}
-		}
-	}
 
 	if (transparent == TRANSPARENT_ON) {
 		// The backend address is the local address of the client socket.  Since this is a transparent
