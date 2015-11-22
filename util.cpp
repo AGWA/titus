@@ -198,9 +198,9 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 {
 	struct addrinfo		hints;
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET6;
+	hints.ai_family = host.empty() ? AF_INET6 : AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_V4MAPPED;
+	hints.ai_flags = AI_PASSIVE;
 	hints.ai_protocol = 0;
 
 	struct addrinfo*	addrs;
@@ -212,9 +212,17 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 		freeaddrinfo(addrs);
 		throw Configuration_error("[" + host + "]:" + port + " resolves to more than one address");
 	}
-	std::memcpy(address, addrs->ai_addr, sizeof(*address));
-	if (host.empty()) {
-		std::memcpy(&address->sin6_addr, &in6addr_any, sizeof(in6_addr));
+	if (addrs->ai_family == AF_INET) {
+		std::memset(address, '\0', sizeof(*address));
+		address->sin6_addr.s6_addr[10] = 0xFF;
+		address->sin6_addr.s6_addr[11] = 0xFF;
+		std::memcpy(&address->sin6_addr.s6_addr[12], &reinterpret_cast<const sockaddr_in*>(addrs->ai_addr)->sin_addr, 4);
+		address->sin6_port = reinterpret_cast<const sockaddr_in*>(addrs->ai_addr)->sin_port;
+	} else if (addrs->ai_family == AF_INET6) {
+		std::memcpy(address, addrs->ai_addr, sizeof(*address));
+	} else {
+		freeaddrinfo(addrs);
+		throw Configuration_error("[" + host + "]:" + port + " resolves to an unknown address family");
 	}
 	if (port.empty()) {
 		address->sin6_port = htons(0);
