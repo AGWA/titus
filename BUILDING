@@ -14,7 +14,21 @@ INSTALLING
 
 Run `make install`.
 
-To install somewhere besides /usr/local, run `make install PREFIX=/path/to/prefix`
+
+MAKEFILE OPTIONS
+
+The following Makefile variables can be passed on the command line to
+'make' and 'make install':
+
+	PREFIX=/path	Install to given path (default: /usr/local)
+
+	DESTDIR=/path	Stage installed files under the given path
+			instead of installing directly to the filesystem
+			(intended for package building)
+
+Example:
+	make PREFIX=/usr
+	make install PREFIX=/usr DESTDIR=/tmp/pkgroot
 
 
 DEBIAN PACKAGING
@@ -26,4 +40,5 @@ using git-buildpackage as follows:
   1. Check out the debian branch: `git checkout debian`
   2. Build the package: `git-buildpackage -uc -us`
 
-
+This creates .deb files in the parent directory (..) which can be
+installed with `dpkg -i`.

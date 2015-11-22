@@ -1,8 +1,9 @@
-CXX = c++
 CXXFLAGS ?= -Wall -Wextra -pedantic -O2
 CXXFLAGS += -std=c++11
 LDFLAGS += -lcrypto -lssl
-PREFIX = /usr/local
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+MANDIR ?= $(PREFIX)/share/man
 
 PROGRAMS = titus
 MANPAGES = titus.8
@@ -17,9 +18,9 @@ clean:
 	rm -f *.o $(PROGRAMS)
 
 install:
-	install -d $(DESTDIR)$(PREFIX)/bin
-	install -m 755 $(PROGRAMS) $(DESTDIR)$(PREFIX)/bin/
-	install -d $(DESTDIR)$(PREFIX)/share/man
-	install -m 644 $(MANPAGES) $(DESTDIR)$(PREFIX)/share/man/
+	install -d $(DESTDIR)$(BINDIR)
+	install -m 755 $(PROGRAMS) $(DESTDIR)$(BINDIR)/
+	install -d $(DESTDIR)$(MANDIR)
+	install -m 644 $(MANPAGES) $(DESTDIR)$(MANDIR)/
 
 .PHONY: all clean install
