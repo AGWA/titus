@@ -26,7 +26,7 @@
  */
 
 #ifndef COMMON_HPP
-#define COMMON_HHP
+#define COMMON_HPP
 
 #include "util.hpp"
 #include "rsa_client.hpp"
