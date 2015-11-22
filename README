@@ -43,9 +43,15 @@ version 1.0
 
 NON-LINUX WARNING
 
-On non-Linux systems, due to the lack of the prctl() syscall, titus
-cannot prevent ptracing of one titus process by another titus process.
-This substantially reduces the isolation between TLS connections.
+On non-Linux systems, due to the lack of the prctl() syscall, titus cannot
+prevent tracing/debugging of one titus process by another titus process.
+This substantially reduces the isolation between TLS connections, although
+private key operations remain isolated since they run as a separate user.
+
+On FreeBSD 10.2-RELEASE and higher, titus uses procctl with PROC_TRACE_CTL
+to disable tracing, which should provide isolation.  However, this has
+not undergone security analysis yet and should be considered experimental.
+
 A future version of titus will provide full isolation even on non-Linux
 systems.
 

@@ -30,6 +30,9 @@
 #define HAS_PRCTL 1
 #define HAS_IP_TRANSPARENT 1
 #endif
+#ifdef __FreeBSD__
+#define HAS_PROCCTL
+#endif
 
 #include "util.hpp"
 #include <fcntl.h>
@@ -40,6 +43,9 @@
 #include <sys/resource.h>
 #ifdef HAS_PRCTL
 #include <sys/prctl.h>
+#endif
+#ifdef HAS_PROCCTL
+#include <sys/procctl.h>
 #endif
 #include <netdb.h>
 #include <pwd.h>
@@ -96,6 +102,20 @@ void set_reuseaddr (int sock_fd)
 	}
 }
 
+void disable_tracing ()
+{
+#ifdef HAS_PRCTL
+	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
+		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
+	}
+#elif defined(HAS_PROCCTL) && defined(PROC_TRACE_CTL)
+	// Available in FreeBSD	10.2-RELEASE and higher
+	int arg = PROC_TRACE_CTL_DISABLE_EXEC;
+	if (procctl(P_PID, getpid(), PROC_TRACE_CTL, &arg) == -1 && errno != EINVAL) {
+		throw System_error("procctl(PROC_TRACE_CTL)", "", errno);
+	}
+#endif
+}
 
 void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t drop_gid)
 {
@@ -109,14 +129,10 @@ void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t
 		}
 	}
 
-#ifdef HAS_PRCTL
-	// Prevent this process from being ptraced, so other children running as this UID can't
+	// Prevent this process from being ptraced/debugged, so other children running as this UID can't
 	// attack us.  Ultimately we should use a dedicated UID for every child process for even
 	// better isolation.
-	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
-		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
-	}
-#endif
+	disable_tracing();
 
 	// Drop privileges.
 	if (drop_gid != static_cast<gid_t>(-1) && setgid(drop_gid) == -1) {
