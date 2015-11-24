@@ -22,6 +22,14 @@ The following Makefile variables can be passed on the command line to
 
 	PREFIX=/path	Install to given path (default: /usr/local)
 
+	BINDIR=/path	Install binaries to given path
+			(default: $(PREFIX)/bin)
+
+	MANDIR=/path	Install man pages to given path
+			(default: $(PREFIX)/share/man)
+			(man pages are installed in sectional sub-directories;
+			e.g. $(MANDIR)/man8)
+
 	DESTDIR=/path	Stage installed files under the given path
 			instead of installing directly to the filesystem
 			(intended for package building)
