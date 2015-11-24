@@ -20,7 +20,7 @@ clean:
 install:
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 $(PROGRAMS) $(DESTDIR)$(BINDIR)/
-	install -d $(DESTDIR)$(MANDIR)
-	install -m 644 $(MANPAGES) $(DESTDIR)$(MANDIR)/
+	install -d $(DESTDIR)$(MANDIR)/man8
+	install -m 644 $(MANPAGES) $(DESTDIR)$(MANDIR)/man8/
 
 .PHONY: all clean install
