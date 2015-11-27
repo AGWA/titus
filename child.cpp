@@ -75,12 +75,12 @@ namespace {
 		int		backend_sock;
 
 		State		client_read_state;
-		bool		client_buffer[4096];	// read from client, written to backend
+		unsigned char	client_buffer[4096];	// read from client, written to backend
 		size_t		client_buffer_len;
 		size_t		client_buffer_proxied;	// # of bytes proxied so far to backend
 
 		State		backend_read_state;
-		bool		backend_buffer[4096];	// read from backend, written to client
+		unsigned char	backend_buffer[4096];	// read from backend, written to client
 		size_t		backend_buffer_len;
 		size_t		backend_buffer_proxied;	// # of bytes proxied so far to client
 
