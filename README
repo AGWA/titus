@@ -36,7 +36,7 @@ CURRENT STATUS
 
 The current version of titus is 0.3, released on 2015-11-28.  titus
 aims to be bug-free and secure, though it is lacking in features and
-need additional performance optimization.  Additionally, we may make
+needs additional performance optimization.  Additionally, we may make
 backwards-incompatible changes to the behavior before titus reaches
 version 1.0
 
