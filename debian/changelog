@@ -1,3 +1,10 @@
+titus (0.3-1) unstable; urgency=low
+
+  * Install NEWS file.
+  * New upstream release.
+
+ -- Andrew Ayer <agwa@andrewayer.name>  Sat, 28 Nov 2015 14:52:07 -0800
+
 titus (0.2-1) unstable; urgency=low
 
   * New upstream release.
