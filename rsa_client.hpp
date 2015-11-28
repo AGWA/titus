@@ -32,8 +32,29 @@
 #include <openssl/evp.h>
 #include <stdint.h>
 #include "util.hpp"
+#include "filedesc.hpp"
 
-openssl_unique_ptr<EVP_PKEY>	rsa_client_load_private_key (uintptr_t key_id, RSA* public_rsa);
-void				rsa_client_set_socket (filedesc fd);
+class Rsa_client {
+	filedesc		sock;
+
+	void			send_to_server (const void* data, size_t len) const;
+	void			recv_from_server (void* data, size_t len) const;
+
+	static int		rsa_private_decrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding);
+	static int		rsa_private_encrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding);
+	static int		rsa_finish (RSA* rsa);
+	static const RSA_METHOD* get_rsa_method ();
+public:
+	// Note: you can't move Rsa_clients because doing so would leave
+	// dangling pointers in all the private keys created from it.
+	Rsa_client () = default;
+	Rsa_client (const Rsa_client&) = delete;
+	Rsa_client (Rsa_client&&) = delete;
+	Rsa_client& operator= (const Rsa_client&) = delete;
+	Rsa_client& operator= (Rsa_client&&) = delete;
+
+	openssl_unique_ptr<EVP_PKEY>	load_private_key (uintptr_t key_id, RSA* public_rsa);
+	void				set_socket (filedesc);
+};
 
 #endif

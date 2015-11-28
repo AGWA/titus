@@ -310,19 +310,19 @@ namespace {
 		}
 
 		// Get the RSA public key from it:
-		EVP_PKEY*			pubkey = X509_get_pubkey(crt.get());
+		openssl_unique_ptr<EVP_PKEY>	pubkey(X509_get_pubkey(crt.get()));
 		if (!pubkey) {
 			throw Configuration_error("Unable to load TLS cert: malformed X509 file?");
 		}
 
-		openssl_unique_ptr<RSA>		public_rsa(EVP_PKEY_get1_RSA(pubkey));
+		openssl_unique_ptr<RSA>		public_rsa(EVP_PKEY_get1_RSA(pubkey.get()));
 		if (!public_rsa) {
 			// not an RSA key
 			throw Configuration_error("Unable to load TLS cert: does not correspond to an RSA key");
 		}
 
 		// Create a RSA private key "client"
-		openssl_unique_ptr<EVP_PKEY>	privkey(rsa_client_load_private_key(vhost.id, public_rsa.get()));
+		openssl_unique_ptr<EVP_PKEY>	privkey(rsa_client.load_private_key(vhost.id, public_rsa.get()));
 		public_rsa.reset();
 
 		// Use this private key for SSL:
@@ -401,28 +401,18 @@ namespace {
 		if (key == "ciphers") {
 			ciphers = value;
 		} else if (key == "dhgroup") {
-			openssl_unique_ptr<DH>	dh;
 			// TODO: support custom DH parameters, additional pre-defined groups
 			if (value == "14") {
-				dh = make_dh(dh_group14_prime, dh_group14_generator);
+				dhgroup = make_dh(dh_group14_prime, dh_group14_generator);
 			} else if (value == "15") {
-				dh = make_dh(dh_group15_prime, dh_group15_generator);
+				dhgroup = make_dh(dh_group15_prime, dh_group15_generator);
 			} else if (value == "16") {
-				dh = make_dh(dh_group16_prime, dh_group16_generator);
+				dhgroup = make_dh(dh_group16_prime, dh_group16_generator);
 			} else {
 				throw Configuration_error("Unknown DH group `" + value + "'");
 			}
-			dhgroup = std::move(dh);
 		} else if (key == "ecdhcurve") {
-			int	nid = OBJ_sn2nid(value.c_str());
-			if (nid == NID_undef) {
-				throw Configuration_error("Unknown ECDH curve `" + value + "'");
-			}
-			openssl_unique_ptr<EC_KEY>	ecdh(EC_KEY_new_by_curve_name(nid));
-			if (!ecdh) {
-				throw Configuration_error("Unable to create ECDH curve: " + Openssl_error::message(ERR_get_error()));
-			}
-			ecdhcurve = std::move(ecdh);
+			ecdhcurve = get_ecdhcurve(value);
 		} else if (key == "compression") {
 			ssl_options[SSL_OP_NO_COMPRESSION] = !parse_config_bool(value);
 		} else if (key == "sslv3") {
@@ -535,6 +525,7 @@ namespace {
 			// read directive value
 			std::string		value;
 			std::getline(config_in, value);
+			chomp(value);
 
 			if (!process_param(directive, value)) {
 				throw Configuration_error("Unknown vhost parameter `" + directive + "'");
@@ -570,6 +561,7 @@ namespace {
 				// read directive value
 				std::string		value;
 				std::getline(config_in, value);
+				chomp(value);
 
 				process_config_param(directive, value);
 			}
@@ -611,6 +603,11 @@ try {
 	ERR_load_crypto_strings();
 	SSL_library_init();
 	SSL_load_error_strings();
+
+	// This cipher list is the "Intermediate compatibility" list from https://wiki.mozilla.org/Security/Server_Side_TLS#Intermediate_compatibility_.28default.29 as of 2014-12-09
+	vhost_defaults.ciphers = "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:AES:CAMELLIA:DES-CBC3-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA";
+	vhost_defaults.dhgroup = make_dh(dh_group14_prime, dh_group14_generator); // 2048 bit group
+	vhost_defaults.ecdhcurve = get_ecdhcurve("prime256v1"); // a.k.a. secp256r1
 
 	// Set default SSL options, which can be overridden by config file
 	vhost_defaults.ssl_options[SSL_OP_NO_COMPRESSION] = true;

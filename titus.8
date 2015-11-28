@@ -1,4 +1,4 @@
-.TH "TITUS" "8" "2014-04-29" "Andrew Ayer" "Titus Manual"
+.TH "TITUS" "8" "2015-11-28" "Andrew Ayer" "Titus Manual"
 .SH "NAME"
 .LP 
 titus \- totally isolated TLS unwrapping server
@@ -112,7 +112,10 @@ Use the certificate stored in \fIfilename\fR.  Intermediate certificate authorit
 should be placed in this file following your certificate.
 .TP
 .BI ciphers \ \fIlist\fR
-Use the given OpenSSL cipher list.  See ciphers(1SSL) for a description of the syntax.
+Use the given OpenSSL cipher list.  See ciphers(1SSL) for a description of the syntax.  The default
+cipher list is the Intermediate Compatibility list from Mozilla's Server Side TLS guide, as of
+2014-12-09.  This cipher list provides excellent security for recent browsers, and acceptable
+security for older browsers.
 .TP
 .BI honor-client-cipher-order \ \fByes\fR\ |\ \fBno\fR
 If set to "yes," the client dictates which cipher, among those listed in the \fBciphers\fR option,
@@ -120,12 +123,15 @@ is used.  If set to "no," earlier ciphers listed in the \fBciphers\fR option are
 .TP
 .BI dhgroup \ \fIid\fR
 Use the given Diffie-Hellman group (from RFC3526) for the Diffie-Hellman handshake.  Supported
-groups are "14" (2048 bits), "15" (3072 bits), and "16" (4096 bits).
+groups are "14" (2048 bits), "15" (3072 bits), and "16" (4096 bits).  The default is group 14.
 .TP
 .BI ecdhcurve \ \fIname\fR
 Use the given curve for the Elliptic Curve Diffie-Hellman handshake.  The curve must be supported
 by OpenSSL (run 'openssl ecparam -list_curves' for a list) and be listed in Section 5.1.1 of RFC 4492.
-"prime256v1" is a good choice for most people.  Use "secp384r1" or "secp521r1" if you're paranoid.
+As of 2014, only "prime256v1" (NIST P-256) and "secp384r1" (NIST P-384) are widely supported
+by web browsers.
+
+The default is "prime256v1", which is a good choice for most people.
 
 Note: elliptic curve names are poorly standardized.  For instance, the curve called "prime256v1" by OpenSSL is listed
 as "secp256r1" in RFC 4492.
@@ -138,8 +144,8 @@ is safe only when an attacker cannot inject chosen plaintext into the connection
 it trivial to inject chosen plaintext.
 .TP
 .BI sslv3 \ \fByes\fR\ |\ \fBno\fR
-Enable/disable support for SSLv3, which is off by default.  SSLv3 has some security problems.
-Unfortunately, some older clients (notably, IE6) do not support anything better.
+Enable/disable support for SSLv3, which is off by default.  SSLv3 is insecure and should not
+be enabled.  Unfortunately, some older clients (notably, IE6) do not support anything better.
 .TP
 .BI tlsv1 \ \fByes\fR\ |\ \fBno\fR
 Enable/disable support for TLSv1, which is on by default.  TLSv1 has

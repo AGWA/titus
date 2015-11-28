@@ -25,8 +25,8 @@
  * authorization.
  */
 
-#ifndef AGWA_FILEDESC_H
-#define AGWA_FILEDESC_H
+#ifndef AGWA_FILEDESC_HPP
+#define AGWA_FILEDESC_HPP
 
 #include <unistd.h>
 #include <errno.h>

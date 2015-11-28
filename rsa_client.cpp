@@ -36,78 +36,76 @@
 
 
 namespace {
-	filedesc	sock;
+	struct Rsa_client_data {
+		Rsa_client*	client = nullptr;
+		uintptr_t	key_id = 0;
+	};
+}
 
-	void	send_to_server (const void* data, size_t len)
-	{
-		write_all(sock, data, len);
-	}
-	void	recv_from_server (void* data, size_t len)
-	{
-		if (!read_all(sock, data, len)) {
-			throw Key_protocol_error("Server ended connection prematurely");
-		}
-	}
+int	Rsa_client::rsa_private_decrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
+{
+	const uint8_t		command = 1;
+	Rsa_client_data*	data = reinterpret_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
 
-	int	rsa_client_private_decrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
-	{
-		uint8_t		command = 1;
-		uintptr_t	key_id = reinterpret_cast<uintptr_t>(RSA_get_app_data(rsa));
+	data->client->send_to_server(&command, sizeof(command));
+	data->client->send_to_server(&data->key_id, sizeof(data->key_id));
+	data->client->send_to_server(&padding, sizeof(padding));
+	data->client->send_to_server(&flen, sizeof(flen));
+	data->client->send_to_server(from, flen);
 
-		send_to_server(&command, sizeof(command));
-		send_to_server(&key_id, sizeof(key_id));
-		send_to_server(&padding, sizeof(padding));
-		send_to_server(&flen, sizeof(flen));
-		send_to_server(from, flen);
-
-		int		plain_len;
-		recv_from_server(&plain_len, sizeof(plain_len));
-		if (plain_len > 0) {
-			recv_from_server(to, plain_len);
-		}
-
-		return plain_len;
+	int			plain_len;
+	data->client->recv_from_server(&plain_len, sizeof(plain_len));
+	if (plain_len > 0) {
+		data->client->recv_from_server(to, plain_len);
 	}
 
-	int	rsa_client_private_encrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
-	{
-		uint8_t		command = 2;
-		uintptr_t	key_id = reinterpret_cast<uintptr_t>(RSA_get_app_data(rsa));
+	return plain_len;
+}
 
-		send_to_server(&command, sizeof(command));
-		send_to_server(&key_id, sizeof(key_id));
-		send_to_server(&padding, sizeof(padding));
-		send_to_server(&flen, sizeof(flen));
-		send_to_server(from, flen);
+int	Rsa_client::rsa_private_encrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
+{
+	const uint8_t		command = 2;
+	Rsa_client_data*	data = reinterpret_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
 
-		int		sig_len;
-		recv_from_server(&sig_len, sizeof(sig_len));
-		if (sig_len > 0) {
-			recv_from_server(to, sig_len);
-		}
+	data->client->send_to_server(&command, sizeof(command));
+	data->client->send_to_server(&data->key_id, sizeof(data->key_id));
+	data->client->send_to_server(&padding, sizeof(padding));
+	data->client->send_to_server(&flen, sizeof(flen));
+	data->client->send_to_server(from, flen);
 
-		return sig_len;
+	int			sig_len;
+	data->client->recv_from_server(&sig_len, sizeof(sig_len));
+	if (sig_len > 0) {
+		data->client->recv_from_server(to, sig_len);
 	}
 
-	RSA_METHOD*	get_rsa_client_method ()
-	{
-		static RSA_METHOD ops;
-		if (!ops.rsa_priv_enc) {
-			ops = *RSA_get_default_method();
-			ops.rsa_priv_enc = rsa_client_private_encrypt;
-			ops.rsa_priv_dec = rsa_client_private_decrypt;
-		}
-		return &ops;
+	return sig_len;
+}
+
+int	Rsa_client::rsa_finish (RSA* rsa)
+{
+	delete reinterpret_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
+	if (const auto default_finish = RSA_get_default_method()->finish) {
+		return (*default_finish)(rsa);
+	} else {
+		return 1;
 	}
 }
 
-openssl_unique_ptr<EVP_PKEY>	rsa_client_load_private_key (uintptr_t key_id, RSA* public_rsa)
+const RSA_METHOD*	Rsa_client::get_rsa_method ()
 {
-	openssl_unique_ptr<EVP_PKEY>	private_key(EVP_PKEY_new());
-	if (!private_key) {
-		throw Openssl_error(ERR_get_error());
+	static RSA_METHOD ops;
+	if (!ops.rsa_priv_enc) {
+		ops = *RSA_get_default_method();
+		ops.rsa_priv_enc = rsa_private_encrypt;
+		ops.rsa_priv_dec = rsa_private_decrypt;
+		ops.finish = rsa_finish;
 	}
+	return &ops;
+}
 
+openssl_unique_ptr<EVP_PKEY>	Rsa_client::load_private_key (uintptr_t key_id, RSA* public_rsa)
+{
 	openssl_unique_ptr<RSA>		rsa(RSA_new());
 	if (!rsa) {
 		throw Openssl_error(ERR_get_error());
@@ -122,8 +120,17 @@ openssl_unique_ptr<EVP_PKEY>	rsa_client_load_private_key (uintptr_t key_id, RSA*
 		throw Openssl_error(ERR_get_error());
 	}
 
-	RSA_set_method(rsa.get(), get_rsa_client_method());
-	if (!RSA_set_app_data(rsa.get(), reinterpret_cast<void*>(key_id))) {
+	std::unique_ptr<Rsa_client_data> client_data(new Rsa_client_data);
+	client_data->client = this;
+	client_data->key_id = key_id;
+	if (!RSA_set_app_data(rsa.get(), client_data.get())) {
+		throw Openssl_error(ERR_get_error());
+	}
+	RSA_set_method(rsa.get(), get_rsa_method());
+	client_data.release(); // After calling RSA_set_method, client_data is owned by rsa.
+
+	openssl_unique_ptr<EVP_PKEY>	private_key(EVP_PKEY_new());
+	if (!private_key) {
 		throw Openssl_error(ERR_get_error());
 	}
 
@@ -136,8 +143,19 @@ openssl_unique_ptr<EVP_PKEY>	rsa_client_load_private_key (uintptr_t key_id, RSA*
 	return private_key;
 }
 
-void	rsa_client_set_socket (filedesc arg_sock)
+void	Rsa_client::set_socket (filedesc arg_sock)
 {
 	sock = std::move(arg_sock);
 }
 
+void	Rsa_client::send_to_server (const void* data, size_t len) const
+{
+	write_all(sock, data, len);
+}
+
+void	Rsa_client::recv_from_server (void* data, size_t len) const
+{
+	if (!read_all(sock, data, len)) {
+		throw Key_protocol_error("Server ended connection prematurely");
+	}
+}

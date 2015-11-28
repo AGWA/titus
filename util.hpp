@@ -48,6 +48,8 @@
 #include <unistd.h>
 #include <memory>
 #include <map>
+#include <tuple>
+#include <type_traits>
 #include <stdlib.h>
 #include "filedesc.hpp"
 
@@ -102,6 +104,7 @@ void set_transparent (int sock_fd);
 void set_not_v6only (int sock_fd);
 void set_reuseaddr (int sock_fd);
 
+void disable_tracing ();
 void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t drop_gid);
 void restrict_file_descriptors ();
 
@@ -152,28 +155,37 @@ filedesc make_unix_socket (const std::string& path);
 
 std::string make_temp_directory ();
 
-template<class... Arg> pid_t spawn (int (*main_function)(Arg...), Arg... arg)
+template<class... Formal, class... Arg> pid_t spawn (int (*main_function)(Formal...), Arg&&... arg)
 {
-	// Note: don't use perfect forwarding of arguments in this function,
-	// because we want to ensure that objects moved into an argument have
-	// their destructors called in the parent process.
 	pid_t		pid = fork();
 	if (pid == -1) {
 		throw System_error("fork", "", errno);
 	}
 	if (pid == 0) {
 		try {
-			_exit(main_function(std::move(arg)...));
+			// Don't pass the result of main_function() directly to _exit(),
+			// or else the destructors for main_function's arguments won't be invoked
+			// (since _exit never returns).
+			const int status = main_function(std::forward<Arg>(arg)...);
+			_exit(status);
 		} catch (...) {
 			std::terminate();
 		}
 	}
+	// Take ownership of every argument to ensure that their destructors are called in
+	// the parent process if they were moved into this function.
+	std::tuple<Formal...>(std::forward<Arg>(arg)...);
 	return pid;
 }
 
 void set_ssl_options (SSL_CTX* ctx, const std::map<long, bool>& options);
 
+openssl_unique_ptr<EC_KEY> get_ecdhcurve (const std::string& name);
+
 inline const std::string& coalesce (const std::string& first, const std::string& second) { return !first.empty() ? first : second; }
 template<class T> T* coalesce (T* first, T* second) { return first ? first : second; }
+
+inline void chomp (std::string& str) { str.erase(str.find_last_not_of(" \t\r\n") + 1); } // NB: std::string::npos+1==0
+bool ascii_streqi (const char*, const char*); // case-insensitive string comparison
 
 #endif

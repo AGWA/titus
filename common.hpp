@@ -26,9 +26,10 @@
  */
 
 #ifndef COMMON_HPP
-#define COMMON_HHP
+#define COMMON_HPP
 
 #include "util.hpp"
+#include "rsa_client.hpp"
 #include <string>
 #include <vector>
 #include <sys/types.h>
@@ -57,7 +58,7 @@ struct Vhost {
 
 	bool matches_servername (const char* arg_servername) const
 	{
-		return !servername_set || servername == arg_servername;
+		return !servername_set || ascii_streqi(servername.c_str(), arg_servername);
 	}
 };
 
@@ -77,5 +78,6 @@ extern int			children_pipe[2];		// Used by children to tell us when they accept 
 extern struct sockaddr_un	keyserver_sockaddr;
 extern socklen_t		keyserver_sockaddr_len;
 extern Vhost*			active_vhost;
+extern Rsa_client		rsa_client;
 
 #endif

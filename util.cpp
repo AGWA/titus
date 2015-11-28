@@ -30,6 +30,9 @@
 #define HAS_PRCTL 1
 #define HAS_IP_TRANSPARENT 1
 #endif
+#ifdef __FreeBSD__
+#define HAS_PROCCTL
+#endif
 
 #include "util.hpp"
 #include <fcntl.h>
@@ -40,6 +43,9 @@
 #include <sys/resource.h>
 #ifdef HAS_PRCTL
 #include <sys/prctl.h>
+#endif
+#ifdef HAS_PROCCTL
+#include <sys/procctl.h>
 #endif
 #include <netdb.h>
 #include <pwd.h>
@@ -96,6 +102,20 @@ void set_reuseaddr (int sock_fd)
 	}
 }
 
+void disable_tracing ()
+{
+#ifdef HAS_PRCTL
+	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
+		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
+	}
+#elif defined(HAS_PROCCTL) && defined(PROC_TRACE_CTL)
+	// Available in FreeBSD	10.2-RELEASE and higher
+	int arg = PROC_TRACE_CTL_DISABLE_EXEC;
+	if (procctl(P_PID, getpid(), PROC_TRACE_CTL, &arg) == -1 && errno != EINVAL) {
+		throw System_error("procctl(PROC_TRACE_CTL)", "", errno);
+	}
+#endif
+}
 
 void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t drop_gid)
 {
@@ -109,14 +129,10 @@ void drop_privileges (const std::string& chroot_directory, uid_t drop_uid, gid_t
 		}
 	}
 
-#ifdef HAS_PRCTL
-	// Prevent this process from being ptraced, so other children running as this UID can't
+	// Prevent this process from being ptraced/debugged, so other children running as this UID can't
 	// attack us.  Ultimately we should use a dedicated UID for every child process for even
 	// better isolation.
-	if (prctl(PR_SET_DUMPABLE, 0) == -1) {
-		throw System_error("prctl(PR_SET_DUMPABLE)", "", errno);
-	}
-#endif
+	disable_tracing();
 
 	// Drop privileges.
 	if (drop_gid != static_cast<gid_t>(-1) && setgid(drop_gid) == -1) {
@@ -198,9 +214,9 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 {
 	struct addrinfo		hints;
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET6;
+	hints.ai_family = host.empty() ? AF_INET6 : AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_V4MAPPED;
+	hints.ai_flags = AI_PASSIVE;
 	hints.ai_protocol = 0;
 
 	struct addrinfo*	addrs;
@@ -212,9 +228,17 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 		freeaddrinfo(addrs);
 		throw Configuration_error("[" + host + "]:" + port + " resolves to more than one address");
 	}
-	std::memcpy(address, addrs->ai_addr, sizeof(*address));
-	if (host.empty()) {
-		std::memcpy(&address->sin6_addr, &in6addr_any, sizeof(in6_addr));
+	if (addrs->ai_family == AF_INET) {
+		std::memset(address, '\0', sizeof(*address));
+		address->sin6_addr.s6_addr[10] = 0xFF;
+		address->sin6_addr.s6_addr[11] = 0xFF;
+		std::memcpy(&address->sin6_addr.s6_addr[12], &reinterpret_cast<const sockaddr_in*>(addrs->ai_addr)->sin_addr, 4);
+		address->sin6_port = reinterpret_cast<const sockaddr_in*>(addrs->ai_addr)->sin_port;
+	} else if (addrs->ai_family == AF_INET6) {
+		std::memcpy(address, addrs->ai_addr, sizeof(*address));
+	} else {
+		freeaddrinfo(addrs);
+		throw Configuration_error("[" + host + "]:" + port + " resolves to an unknown address family");
 	}
 	if (port.empty()) {
 		address->sin6_port = htons(0);
@@ -244,7 +268,7 @@ gid_t resolve_group (const std::string& group)
 
 filedesc make_unix_socket (const std::string& path, struct sockaddr_un* addr, socklen_t* addr_len)
 {
-	if (path.size() + 1 >= sizeof(addr->sun_path)) {
+	if (path.size() >= sizeof(addr->sun_path) - 1) {
 		throw System_error("make_unix_socket", path, ENAMETOOLONG);
 	}
 	unlink(path.c_str());
@@ -289,4 +313,34 @@ void set_ssl_options (SSL_CTX* ctx, const std::map<long, bool>& options)
 		}
 	}
 
+}
+
+openssl_unique_ptr<EC_KEY> get_ecdhcurve (const std::string& name)
+{
+	int     nid = OBJ_sn2nid(name.c_str());
+	if (nid == NID_undef) {
+		throw Configuration_error("Unknown ECDH curve `" + name + "'");
+	}
+	openssl_unique_ptr<EC_KEY>      ecdh(EC_KEY_new_by_curve_name(nid));
+	if (!ecdh) {
+		throw Configuration_error("Unable to create ECDH curve: " + Openssl_error::message(ERR_get_error()));
+	}
+	return ecdh;
+}
+
+namespace {
+	// Avoid the ctype.h functions because they do locale stuff
+	inline char	ascii_tolower (char c) { return (c >= 'A' && c <= 'Z' ? c | 32 : c); }
+}
+
+bool ascii_streqi (const char* a, const char* b)
+{
+	while (ascii_tolower(*a) == ascii_tolower(*b)) {
+		if (*a == '\0') {
+			return true;
+		}
+		++a;
+		++b;
+	}
+	return false;
 }

@@ -45,4 +45,8 @@ template<size_t prime_len, size_t generator_len> openssl_unique_ptr<DH> make_dh 
 	return make_dh(prime, prime_len, generator, generator_len);
 }
 
+// Returns a DH group appropriate for pairing with an RSA key of the given modulus size:
+// (may return null if we don't have a DH group strong enough)
+openssl_unique_ptr<DH> make_dh_for_rsa_size (unsigned int modulus_size_in_bits);
+
 #endif

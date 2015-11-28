@@ -43,3 +43,4 @@ int			children_pipe[2];
 struct sockaddr_un	keyserver_sockaddr;
 socklen_t		keyserver_sockaddr_len;
 Vhost*			active_vhost;
+Rsa_client		rsa_client;
