@@ -220,7 +220,7 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 	hints.ai_protocol = 0;
 
 	struct addrinfo*	addrs;
-	int			res = getaddrinfo(host.empty() ? NULL : host.c_str(), port.empty() ? NULL : port.c_str(), &hints, &addrs);
+	int			res = getaddrinfo(host.empty() ? nullptr : host.c_str(), port.empty() ? nullptr : port.c_str(), &hints, &addrs);
 	if (res != 0) {
 		throw Configuration_error("Unable to resolve [" + host + "]:" + port + " - " + gai_strerror(res));
 	}

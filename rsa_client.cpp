@@ -94,8 +94,8 @@ int	Rsa_client::rsa_finish (RSA* rsa)
 
 const RSA_METHOD*	Rsa_client::get_rsa_method ()
 {
-	static RSA_METHOD* ops = NULL;
-	if (ops == NULL) {
+	static RSA_METHOD* ops = nullptr;
+	if (ops == nullptr) {
 		ops = RSA_meth_dup(RSA_get_default_method());
 		RSA_meth_set_priv_enc(ops, rsa_private_encrypt);
 		RSA_meth_set_priv_dec(ops, rsa_private_decrypt);
@@ -111,18 +111,18 @@ openssl_unique_ptr<EVP_PKEY>	Rsa_client::load_private_key (uintptr_t key_id, RSA
 		throw Openssl_error(ERR_get_error());
 	}
 
-	const BIGNUM* pk_n = NULL;
-	const BIGNUM* pk_e = NULL;
-	BIGNUM* n = NULL;
-	BIGNUM* e = NULL;
-	RSA_get0_key(public_rsa, &pk_n, &pk_e, NULL);
-	if ((n = BN_dup(pk_n)) == NULL) {
+	const BIGNUM* pk_n = nullptr;
+	const BIGNUM* pk_e = nullptr;
+	BIGNUM* n = nullptr;
+	BIGNUM* e = nullptr;
+	RSA_get0_key(public_rsa, &pk_n, &pk_e, nullptr);
+	if ((n = BN_dup(pk_n)) == nullptr) {
 		throw Openssl_error(ERR_get_error());
 	}
-	if ((e = BN_dup(pk_e)) == NULL) {
+	if ((e = BN_dup(pk_e)) == nullptr) {
 		throw Openssl_error(ERR_get_error());
 	}
-	if (!RSA_set0_key(rsa.get(), n, e, NULL)) {
+	if (!RSA_set0_key(rsa.get(), n, e, nullptr)) {
 		throw Openssl_error(ERR_get_error());
 	}
 
