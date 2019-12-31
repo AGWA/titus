@@ -111,10 +111,18 @@ openssl_unique_ptr<EVP_PKEY>	Rsa_client::load_private_key (uintptr_t key_id, RSA
 		throw Openssl_error(ERR_get_error());
 	}
 
-	const BIGNUM* n;
-	const BIGNUM* e;
-	RSA_get0_key(public_rsa, &n, &e, NULL);
-	if (!RSA_set0_key(rsa.get(), BN_dup(n), BN_dup(e), NULL)) {
+	const BIGNUM* pk_n = NULL;
+	const BIGNUM* pk_e = NULL;
+	BIGNUM* n = NULL;
+	BIGNUM* e = NULL;
+	RSA_get0_key(public_rsa, &pk_n, &pk_e, NULL);
+	if ((n = BN_dup(pk_n)) == NULL) {
+		throw Openssl_error(ERR_get_error());
+	}
+	if ((e = BN_dup(pk_e)) == NULL) {
+		throw Openssl_error(ERR_get_error());
+	}
+	if (!RSA_set0_key(rsa.get(), n, e, NULL)) {
 		throw Openssl_error(ERR_get_error());
 	}
 
