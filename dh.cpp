@@ -148,14 +148,14 @@ openssl_unique_ptr<DH> make_dh (const unsigned char* prime, size_t prime_len, co
 		throw Openssl_error(ERR_get_error());
 	}
 
-  BIGNUM* p = NULL;
-  BIGNUM* g = NULL;
-  if ((p = BN_bin2bn(prime, prime_len, NULL)) == NULL) {
+	BIGNUM* p = NULL;
+	BIGNUM* g = NULL;
+	if ((p = BN_bin2bn(prime, prime_len, NULL)) == NULL) {
 		throw Openssl_error(ERR_get_error());
-  }
-  if ((g = BN_bin2bn(generator, generator_len, NULL)) == NULL) {
+	}
+	if ((g = BN_bin2bn(generator, generator_len, NULL)) == NULL) {
 		throw Openssl_error(ERR_get_error());
-  }
+	}
 	if (!DH_set0_pqg(dh.get(), p, NULL, g)) {
 		throw Openssl_error(ERR_get_error());
 	}
