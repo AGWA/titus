@@ -1,3 +1,9 @@
+v0.4 (2020-10-27)
+  * Add support for OpenSSL 1.1; building with OpenSSL 1.0 is no longer supported.
+  * Fix bug introduced in v0.3 which affected DNS resolution of backend hostnames.
+  * Minor internal code improvements.
+  * Document that titus is no longer developed.
+
 v0.3 (2015-11-28)
   * Set reasonable, secure crypto settings by default.
   * Fix/improve FreeBSD support.  On FreeBSD 10.2-RELEASE and higher,

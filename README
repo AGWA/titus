@@ -31,14 +31,18 @@ provides advanced control over TLS settings, such as the Diffie-Hellman
 modulus, and the curve used for Elliptic Curve Diffie-Hellman.  This is
 handy if your backend's built-in TLS support is lacking.
 
+For technical details about titus' design, see
+https://www.agwa.name/blog/post/protecting_the_openssl_private_key_in_a_separate_process
+and https://www.agwa.name/blog/post/titus_isolation_techniques_continued
+
 
 CURRENT STATUS
 
-The current version of titus is 0.3, released on 2015-11-28.  titus
-aims to be bug-free and secure, though it is lacking in features and
-needs additional performance optimization.  Additionally, we may make
-backwards-incompatible changes to the behavior before titus reaches
-version 1.0
+titus is no longer developed.  Since titus was first released, memory-safe
+TLS stacks like Go's crypto/tls and Rust's rustls have matured enough that
+the author no longer needs titus.
+
+The last version of titus was 0.4, released on 2020-10-27.
 
 
 NON-LINUX WARNING
@@ -52,15 +56,8 @@ On FreeBSD 10.2-RELEASE and higher, titus uses procctl with PROC_TRACE_CTL
 to disable tracing, which should provide isolation.  However, this has
 not undergone security analysis yet and should be considered experimental.
 
-A future version of titus will provide full isolation even on non-Linux
-systems.
-
 
 INSTALLING TITUS
-
-If you use Debian or Ubuntu, see https://www.opsmate.com/titus/#getting
-for information about installing the titus .deb package.  Using the .deb
-package is highly recommended since it comes with a handy init script.
 
 To build from source, see the BUILDING file.
 
@@ -78,31 +75,6 @@ See /etc/titus/README for details.
 RUNNING TITUS
 
 Run `titus --config /path/to/titus.conf`.
-
-If you're using the Debian package, use the init script to start/stop
-titus like any other service.
-
-
-PROJECT RESOURCES
-
-Home page:	https://www.opsmate.com/titus
-Git repository:	https://agwa.name/git/titus.git
-		https://github.com/AGWA/titus.git (mirror)
-GitHub project:	https://github.com/AGWA/titus
-Issue tracker:	https://github.com/AGWA/titus/issues
-Announce list:	https://lists.cloudmutt.com/mailman/listinfo/titus-announce
-Discuss list:	https://lists.cloudmutt.com/mailman/listinfo/titus-discuss
-
-For help or questions, send mail to the discuss list
-<titus-discuss@lists.cloudmutt.com>.  To report a bug or make a
-feature request, please open an issue at GitHub or send mail to the
-discuss list.  To contribute code, please send a properly-formatted
-patch to the discuss list, or open a pull request at GitHub.
-
-
-AUTHOR
-
-titus was written by Andrew Ayer <agwa@andrewayer.name>.
 
 
 FURTHER DOCUMENTATION

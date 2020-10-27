@@ -1,6 +1,6 @@
 DEPENDENCIES
 
-  * OpenSSL 1.0.1 or higher, with development headers
+  * OpenSSL 1.1.0 or higher, with development headers
   * A C++11 compiler (such as GCC 4.7, Clang 3.0, or newer)
   * Make
 
