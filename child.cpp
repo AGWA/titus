@@ -54,7 +54,7 @@ namespace {
 
 		sigset_t empty_sigset;
 		sigemptyset(&empty_sigset);
-		sigprocmask(SIG_SETMASK, &empty_sigset, NULL);
+		sigprocmask(SIG_SETMASK, &empty_sigset, nullptr);
 	}
 
 	class Pump {
@@ -267,7 +267,7 @@ namespace {
 						break;
 					}
 
-					if (select(max_fd + 1, &rfds, &wfds, NULL, NULL) == -1) {
+					if (select(max_fd + 1, &rfds, &wfds, nullptr, nullptr) == -1) {
 						throw System_error("select", "", errno);
 					}
 				}

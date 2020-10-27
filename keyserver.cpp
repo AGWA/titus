@@ -50,7 +50,7 @@ struct Key_server {
 
 		sigset_t empty_sigset;
 		sigemptyset(&empty_sigset);
-		sigprocmask(SIG_SETMASK, &empty_sigset, NULL);
+		sigprocmask(SIG_SETMASK, &empty_sigset, nullptr);
 	}
 
 	static int child_main (Key_server& keyserver, filedesc client_sock)
@@ -108,7 +108,7 @@ try {
 			throw System_error("fopen", vhost->key_filename, errno);
 		}
 
-		openssl_unique_ptr<RSA>		rsa(PEM_read_RSAPrivateKey(fp.get(), NULL, NULL, NULL));
+		openssl_unique_ptr<RSA>		rsa(PEM_read_RSAPrivateKey(fp.get(), nullptr, nullptr, nullptr));
 		if (!rsa) {
 			throw Openssl_error(ERR_get_error());
 		}
@@ -117,7 +117,7 @@ try {
 
 	// Accept and service connections
 	while (true) {
-		filedesc	client_sock(accept(keyserver.sock, NULL, NULL));
+		filedesc	client_sock(accept(keyserver.sock, nullptr, nullptr));
 		if (client_sock == -1) {
 			if (errno == ECONNABORTED) {
 				continue;

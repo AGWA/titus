@@ -45,7 +45,7 @@ namespace {
 int	Rsa_client::rsa_private_decrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
 {
 	const uint8_t		command = 1;
-	Rsa_client_data*	data = reinterpret_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
+	Rsa_client_data*	data = static_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
 
 	data->client->send_to_server(&command, sizeof(command));
 	data->client->send_to_server(&data->key_id, sizeof(data->key_id));
@@ -65,7 +65,7 @@ int	Rsa_client::rsa_private_decrypt (int flen, const unsigned char* from, unsign
 int	Rsa_client::rsa_private_encrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
 {
 	const uint8_t		command = 2;
-	Rsa_client_data*	data = reinterpret_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
+	Rsa_client_data*	data = static_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
 
 	data->client->send_to_server(&command, sizeof(command));
 	data->client->send_to_server(&data->key_id, sizeof(data->key_id));
@@ -84,8 +84,8 @@ int	Rsa_client::rsa_private_encrypt (int flen, const unsigned char* from, unsign
 
 int	Rsa_client::rsa_finish (RSA* rsa)
 {
-	delete reinterpret_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
-	if (const auto default_finish = RSA_get_default_method()->finish) {
+	delete static_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
+	if (const auto default_finish = RSA_meth_get_finish(RSA_get_default_method())) {
 		return (*default_finish)(rsa);
 	} else {
 		return 1;
@@ -94,14 +94,14 @@ int	Rsa_client::rsa_finish (RSA* rsa)
 
 const RSA_METHOD*	Rsa_client::get_rsa_method ()
 {
-	static RSA_METHOD ops;
-	if (!ops.rsa_priv_enc) {
-		ops = *RSA_get_default_method();
-		ops.rsa_priv_enc = rsa_private_encrypt;
-		ops.rsa_priv_dec = rsa_private_decrypt;
-		ops.finish = rsa_finish;
+	static RSA_METHOD* ops = nullptr;
+	if (ops == nullptr) {
+		ops = RSA_meth_dup(RSA_get_default_method());
+		RSA_meth_set_priv_enc(ops, rsa_private_encrypt);
+		RSA_meth_set_priv_dec(ops, rsa_private_decrypt);
+		RSA_meth_set_finish(ops, rsa_finish);
 	}
-	return &ops;
+	return ops;
 }
 
 openssl_unique_ptr<EVP_PKEY>	Rsa_client::load_private_key (uintptr_t key_id, RSA* public_rsa)
@@ -111,12 +111,18 @@ openssl_unique_ptr<EVP_PKEY>	Rsa_client::load_private_key (uintptr_t key_id, RSA
 		throw Openssl_error(ERR_get_error());
 	}
 
-	rsa->n = BN_dup(public_rsa->n);
-	if (!rsa->n) {
+	const BIGNUM* pk_n = nullptr;
+	const BIGNUM* pk_e = nullptr;
+	BIGNUM* n = nullptr;
+	BIGNUM* e = nullptr;
+	RSA_get0_key(public_rsa, &pk_n, &pk_e, nullptr);
+	if ((n = BN_dup(pk_n)) == nullptr) {
 		throw Openssl_error(ERR_get_error());
 	}
-	rsa->e = BN_dup(public_rsa->e);
-	if (!rsa->e) {
+	if ((e = BN_dup(pk_e)) == nullptr) {
+		throw Openssl_error(ERR_get_error());
+	}
+	if (!RSA_set0_key(rsa.get(), n, e, nullptr)) {
 		throw Openssl_error(ERR_get_error());
 	}
 

@@ -127,22 +127,22 @@ namespace {
 		// SIGINT and SIGTERM
 		siginfo.sa_flags = 0;
 		siginfo.sa_handler = graceful_termination_handler;
-		sigaction(SIGINT, &siginfo, NULL);
-		sigaction(SIGTERM, &siginfo, NULL);
+		sigaction(SIGINT, &siginfo, nullptr);
+		sigaction(SIGTERM, &siginfo, nullptr);
 
 		// SIGCHLD
 		siginfo.sa_flags = 0;
 		siginfo.sa_handler = sigchld_handler;
-		sigaction(SIGCHLD, &siginfo, NULL);
+		sigaction(SIGCHLD, &siginfo, nullptr);
 
 		// SIGPIPE
 		siginfo.sa_flags = 0;
 		siginfo.sa_handler = SIG_IGN;
-		sigaction(SIGPIPE, &siginfo, NULL);
+		sigaction(SIGPIPE, &siginfo, nullptr);
 
 		// Block SIGINT, SIGTERM, SIGCHLD; they will be unblocked
 		// at a convenient time
-		sigprocmask(SIG_BLOCK, &siginfo.sa_mask, NULL);
+		sigprocmask(SIG_BLOCK, &siginfo.sa_mask, nullptr);
 	}
 
 	struct Too_many_failed_children { };
@@ -204,7 +204,7 @@ namespace {
 			spare_children.erase(it);
 			if (failed) {
 				++failed_children;
-				last_failed_child_time = std::time(NULL);
+				last_failed_child_time = std::time(nullptr);
 				if (failed_children == min_spare_children * 3) {
 					throw Too_many_failed_children();
 				}
@@ -297,14 +297,14 @@ namespace {
 
 		// Try to read a private key from the file.  For isolation, titus doesn't allow mixing private keys
 		// and certs in the same file, so if we can successfully read the private key, error out.
-		if (EVP_PKEY* privkey = PEM_read_PrivateKey(fp.get(), NULL, NULL, NULL)) {
+		if (EVP_PKEY* privkey = PEM_read_PrivateKey(fp.get(), nullptr, nullptr, nullptr)) {
 			EVP_PKEY_free(privkey);
 			throw Configuration_error("TLS cert file " + cert_filename + " contains a private key");
 		}
 		fseek(fp.get(), 0, SEEK_SET);
 
 		// Read the first certificate from the file, which is our certificate:
-		openssl_unique_ptr<X509>	crt(PEM_read_X509_AUX(fp.get(), NULL, NULL, NULL));
+		openssl_unique_ptr<X509>	crt(PEM_read_X509_AUX(fp.get(), nullptr, nullptr, nullptr));
 		if (!crt) {
 			throw Configuration_error("Unable to load TLS cert: " + Openssl_error::message(ERR_get_error()));
 		}
@@ -338,7 +338,7 @@ namespace {
 		crt.release(); // now owned by ssl_ctx
 
 		// Now read the intermediate CA (chain) certificates:
-		while (X509* ca_p = PEM_read_X509(fp.get(), NULL, NULL, NULL)) {
+		while (X509* ca_p = PEM_read_X509(fp.get(), nullptr, nullptr, nullptr)) {
 			openssl_unique_ptr<X509> ca(ca_p);
 			if (SSL_CTX_add_extra_chain_cert(vhost.ssl_ctx.get(), ca.get()) != 1) {
 				throw Openssl_error(ERR_get_error());
@@ -733,8 +733,8 @@ try {
 	is_running = 1;
 	struct timespec		timeout = { 2, 0 };
 	int			select_res = 0;
-	while (is_running && ((select_res = pselect(children_pipe[0] + 1, &readfds, NULL, NULL, failed_children ? &timeout : NULL, &empty_sigset)) >= 0 || errno == EINTR)) {
-		if (failed_children && std::time(NULL) >= last_failed_child_time + 2) {
+	while (is_running && ((select_res = pselect(children_pipe[0] + 1, &readfds, nullptr, nullptr, failed_children ? &timeout : nullptr, &empty_sigset)) >= 0 || errno == EINTR)) {
+		if (failed_children && std::time(nullptr) >= last_failed_child_time + 2) {
 			failed_children = 0;
 		}
 		if (pending_sigchld) {

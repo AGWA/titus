@@ -220,7 +220,7 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 	hints.ai_protocol = 0;
 
 	struct addrinfo*	addrs;
-	int			res = getaddrinfo(host.empty() ? NULL : host.c_str(), port.empty() ? NULL : port.c_str(), &hints, &addrs);
+	int			res = getaddrinfo(host.empty() ? nullptr : host.c_str(), port.empty() ? nullptr : port.c_str(), &hints, &addrs);
 	if (res != 0) {
 		throw Configuration_error("Unable to resolve [" + host + "]:" + port + " - " + gai_strerror(res));
 	}
@@ -228,13 +228,16 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 		freeaddrinfo(addrs);
 		throw Configuration_error("[" + host + "]:" + port + " resolves to more than one address");
 	}
-	if (addrs->ai_family == AF_INET) {
+	if (addrs->ai_family == AF_INET && addrs->ai_addrlen == sizeof(struct sockaddr_in)) {
+		struct sockaddr_in	sin;
+		std::memcpy(&sin, addrs->ai_addr, sizeof(sin));
 		std::memset(address, '\0', sizeof(*address));
+		address->sin6_family = AF_INET6;
 		address->sin6_addr.s6_addr[10] = 0xFF;
 		address->sin6_addr.s6_addr[11] = 0xFF;
-		std::memcpy(&address->sin6_addr.s6_addr[12], &reinterpret_cast<const sockaddr_in*>(addrs->ai_addr)->sin_addr, 4);
-		address->sin6_port = reinterpret_cast<const sockaddr_in*>(addrs->ai_addr)->sin_port;
-	} else if (addrs->ai_family == AF_INET6) {
+		std::memcpy(&address->sin6_addr.s6_addr[12], &sin.sin_addr, 4);
+		address->sin6_port = sin.sin_port;
+	} else if (addrs->ai_family == AF_INET6 && addrs->ai_addrlen == sizeof(struct sockaddr_in6)) {
 		std::memcpy(address, addrs->ai_addr, sizeof(*address));
 	} else {
 		freeaddrinfo(addrs);
