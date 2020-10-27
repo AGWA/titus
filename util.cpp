@@ -230,6 +230,7 @@ void resolve_address (struct sockaddr_in6* address, const std::string& host, con
 	}
 	if (addrs->ai_family == AF_INET) {
 		std::memset(address, '\0', sizeof(*address));
+		address->sin6_family = AF_INET6;
 		address->sin6_addr.s6_addr[10] = 0xFF;
 		address->sin6_addr.s6_addr[11] = 0xFF;
 		std::memcpy(&address->sin6_addr.s6_addr[12], &reinterpret_cast<const sockaddr_in*>(addrs->ai_addr)->sin_addr, 4);
