@@ -1,3 +1,9 @@
+titus (0.4-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Andrew Ayer <agwa@andrewayer.name>  Tue, 27 Oct 2020 18:47:50 -0400
+
 titus (0.3-1) unstable; urgency=low
 
   * Install NEWS file.
