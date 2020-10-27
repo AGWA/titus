@@ -45,7 +45,7 @@ namespace {
 int	Rsa_client::rsa_private_decrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
 {
 	const uint8_t		command = 1;
-	Rsa_client_data*	data = reinterpret_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
+	Rsa_client_data*	data = static_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
 
 	data->client->send_to_server(&command, sizeof(command));
 	data->client->send_to_server(&data->key_id, sizeof(data->key_id));
@@ -65,7 +65,7 @@ int	Rsa_client::rsa_private_decrypt (int flen, const unsigned char* from, unsign
 int	Rsa_client::rsa_private_encrypt (int flen, const unsigned char* from, unsigned char* to, RSA* rsa, int padding)
 {
 	const uint8_t		command = 2;
-	Rsa_client_data*	data = reinterpret_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
+	Rsa_client_data*	data = static_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
 
 	data->client->send_to_server(&command, sizeof(command));
 	data->client->send_to_server(&data->key_id, sizeof(data->key_id));
@@ -84,7 +84,7 @@ int	Rsa_client::rsa_private_encrypt (int flen, const unsigned char* from, unsign
 
 int	Rsa_client::rsa_finish (RSA* rsa)
 {
-	delete reinterpret_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
+	delete static_cast<Rsa_client_data*>(RSA_get_app_data(rsa));
 	if (const auto default_finish = RSA_meth_get_finish(RSA_get_default_method())) {
 		return (*default_finish)(rsa);
 	} else {
